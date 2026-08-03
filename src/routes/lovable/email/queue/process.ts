@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { sendLovableEmail } from '@lovable.dev/email-js'
+import { sendLovableEmail } from 'resend'
 import { createClient } from '@supabase/supabase-js'
 import { createFileRoute } from '@tanstack/react-router'
 
@@ -8,6 +8,7 @@ const DEFAULT_BATCH_SIZE = 10
 const DEFAULT_SEND_DELAY_MS = 200
 const DEFAULT_AUTH_TTL_MINUTES = 15
 const DEFAULT_TRANSACTIONAL_TTL_MINUTES = 60
+const resend = new Resend(process.env.RESEND_API_KEY)
 
 // Check if an error is a rate-limit (429) response.
 // Uses EmailAPIError.status when available (email-js >=0.x with structured errors),
@@ -265,23 +266,20 @@ export const Route = createFileRoute("/lovable/email/queue/process")({
                   ? payload.unsubscribe_token
                   : await getOrCreateUnsubscribeToken(supabase, String(payload.to ?? ''))
 
-              await sendLovableEmail(
-                {
-                  run_id: payload.run_id,
-                  to: payload.to,
-                  from: payload.from,
-                  sender_domain: payload.sender_domain,
-                  subject: payload.subject,
-                  html: payload.html,
-                  text: payload.text,
-                  purpose: payload.purpose,
-                  label: payload.label,
-                  idempotency_key: payload.idempotency_key,
-                  unsubscribe_token: unsubscribeToken,
-                  message_id: payload.message_id,
-                },
-                { apiKey, sendUrl: process.env.LOVABLE_SEND_URL }
-              )
+                  const { error: resendError } = await resend.emails.send({
+                    from: payload.from || 'GORRAO LAB <onboarding@resend.dev>',
+                    to: payload.to,
+                    subject: payload.subject,
+                    html: payload.html,
+                    text: payload.text,
+                    headers: {
+                      'List-Unsubscribe': `<${process.env.VITE_SITE_URL || 'https://gorrao-lab.vercel.app'}/unsubscribe?token=${unsubscribeToken}>`,
+                    },
+                  })
+                  
+                  if (resendError) {
+                    throw new Error(resendError.message)
+                  }
 
               // Log success
               await supabase.from('email_send_log').insert({
