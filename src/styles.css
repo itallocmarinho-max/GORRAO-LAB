@@ -1,0 +1,533 @@
+@import "tailwindcss" source(none);
+
+@source "../src";
+
+@custom-variant dark (&:is(.dark *));
+
+@font-face {
+  font-family: "Don Graffiti";
+  src: url("/fonts/DonGraffiti.otf") format("opentype");
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+.font-don-graffiti {
+  font-family: "Don Graffiti", sans-serif;
+}
+
+.font-graffiti-tag {
+  font-family: "Don Graffiti", "Trebuchet MS", cursive;
+}
+
+@font-face {
+  font-family: "Sprite Graffiti Shadow";
+  src: url("/fonts/SpriteGraffitiShadow.ttf") format("truetype");
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+.font-sprite-graffiti {
+  font-family: "Sprite Graffiti Shadow", "Don Graffiti", cursive;
+}
+
+@font-face {
+  font-family: "Hey August";
+  src: url("/fonts/Hey_August.ttf") format("truetype");
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+.font-hey-august {
+  font-family: "Hey August", cursive;
+}
+
+@font-face {
+  font-family: "Heading Now";
+  src: url("/fonts/HeadingNowTrial-06Bold.ttf") format("truetype");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+.font-heading-now {
+  font-family: "Heading Now", sans-serif;
+}
+
+.text-outline {
+  -webkit-text-stroke-width: 1.5px;
+  -webkit-text-stroke-color: currentColor;
+}
+
+.text-outline-thick {
+  -webkit-text-stroke-width: 2px;
+  -webkit-text-stroke-color: currentColor;
+}
+
+.text-fill-transparent {
+  color: transparent;
+}
+
+.text-stroke-primary {
+  -webkit-text-stroke-color: var(--primary);
+}
+
+/*
+ * Design system definition.
+ *
+ * The @theme inline block maps CSS custom properties to Tailwind utility
+ * classes (e.g. --color-primary -> bg-primary, text-primary).
+ *
+ * The :root and .dark blocks define the actual color values using oklch.
+ * All colors MUST use oklch format.
+ *
+ * To add a new semantic color:
+ * 1. Add the variable to :root (light value) and .dark (dark value)
+ * 2. Register it in @theme inline as --color-<name>: var(--<name>)
+ */
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+  --radius-4xl: calc(var(--radius) + 16px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-ring-offset-background: var(--background);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-active: var(--sidebar-active);
+}
+
+:root {
+  --radius: 0.625rem;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.18 0.01 264);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.18 0.01 264);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.18 0.01 264);
+  /* Primary = Título principal #D11877 */
+  --primary: oklch(0.582 0.222 359.84);
+  --primary-foreground: oklch(1 0 0);
+  /* Secondary = Título secundário #0D7A38 */
+  --secondary: oklch(0.498 0.135 147.8);
+  --secondary-foreground: oklch(1 0 0);
+  --muted: oklch(0.97 0.005 247);
+  --muted-foreground: oklch(0.45 0.02 257);
+  /* Accent = barras e visuais #004AAD */
+  --accent: oklch(0.43 0.18 264.18);
+  --accent-foreground: oklch(1 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.984 0.003 247.858);
+  --border: oklch(0.92 0.005 255);
+  --input: oklch(0.92 0.005 255);
+  --ring: oklch(0.43 0.18 264.18);
+  --chart-1: oklch(0.43 0.18 264.18);
+  --chart-2: oklch(0.582 0.222 359.84);
+  --chart-3: oklch(0.498 0.135 147.8);
+  --chart-4: oklch(0.7 0.15 264);
+  --chart-5: oklch(0.65 0.18 30);
+  /* Sidebar uses #004AAD background with white text */
+  --sidebar: oklch(0.43 0.18 264.18);
+  --sidebar-foreground: oklch(1 0 0);
+  --sidebar-primary: oklch(1 0 0);
+  --sidebar-primary-foreground: oklch(0.43 0.18 264.18);
+  --sidebar-accent: oklch(0.38 0.18 264.18);
+  --sidebar-accent-foreground: oklch(1 0 0);
+  --sidebar-border: oklch(1 0 0 / 15%);
+  --sidebar-ring: oklch(1 0 0 / 40%);
+  --sidebar-active: oklch(0.82 0.33 145);
+}
+
+.dark {
+  --background: oklch(0.129 0.042 264.695);
+  --foreground: oklch(0.984 0.003 247.858);
+  --card: oklch(0.208 0.042 265.755);
+  --card-foreground: oklch(0.984 0.003 247.858);
+  --popover: oklch(0.208 0.042 265.755);
+  --popover-foreground: oklch(0.984 0.003 247.858);
+  --primary: oklch(0.929 0.013 255.508);
+  --primary-foreground: oklch(0.208 0.042 265.755);
+  --secondary: oklch(0.279 0.041 260.031);
+  --secondary-foreground: oklch(0.984 0.003 247.858);
+  --muted: oklch(0.279 0.041 260.031);
+  --muted-foreground: oklch(0.704 0.04 256.788);
+  --accent: oklch(0.279 0.041 260.031);
+  --accent-foreground: oklch(0.984 0.003 247.858);
+  --destructive: oklch(0.704 0.191 22.216);
+  --destructive-foreground: oklch(0.984 0.003 247.858);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.551 0.027 264.364);
+  --chart-1: oklch(0.488 0.243 264.376);
+  --chart-2: oklch(0.696 0.17 162.48);
+  --chart-3: oklch(0.769 0.188 70.08);
+  --chart-4: oklch(0.627 0.265 303.9);
+  --chart-5: oklch(0.645 0.246 16.439);
+  --sidebar: oklch(0.208 0.042 265.755);
+  --sidebar-foreground: oklch(0.984 0.003 247.858);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.984 0.003 247.858);
+  --sidebar-accent: oklch(0.279 0.041 260.031);
+  --sidebar-accent-foreground: oklch(0.984 0.003 247.858);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.551 0.027 264.364);
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+  }
+
+  h1 {
+    color: var(--color-primary);
+  }
+
+  h2 {
+    color: var(--color-secondary);
+  }
+}
+
+@layer utilities {
+  .animate-in {
+    animation-name: enter;
+    animation-duration: 150ms;
+    animation-timing-function: ease-out;
+    animation-fill-mode: both;
+  }
+
+  .animate-out {
+    animation-name: exit;
+    animation-duration: 150ms;
+    animation-timing-function: ease-in;
+    animation-fill-mode: both;
+  }
+
+  .fade-in-0 { --tw-enter-opacity: 0; }
+  .fade-out-0 { --tw-exit-opacity: 0; }
+  .zoom-in-90 { --tw-enter-scale: 0.9; }
+  .zoom-in-95 { --tw-enter-scale: 0.95; }
+  .zoom-out-95 { --tw-exit-scale: 0.95; }
+  .slide-in-from-top-2 { --tw-enter-translate-y: -0.5rem; }
+  .slide-in-from-bottom-2 { --tw-enter-translate-y: 0.5rem; }
+  .slide-in-from-left-1 { --tw-enter-translate-x: -0.25rem; }
+  .slide-in-from-left-2 { --tw-enter-translate-x: -0.5rem; }
+  .slide-in-from-left-52 { --tw-enter-translate-x: -13rem; }
+  .slide-in-from-right-2 { --tw-enter-translate-x: 0.5rem; }
+  .slide-in-from-right-52 { --tw-enter-translate-x: 13rem; }
+
+  @keyframes enter {
+    from {
+      opacity: var(--tw-enter-opacity, 1);
+      transform: translate3d(var(--tw-enter-translate-x, 0), var(--tw-enter-translate-y, 0), 0) scale3d(var(--tw-enter-scale, 1), var(--tw-enter-scale, 1), var(--tw-enter-scale, 1));
+    }
+  }
+
+  @keyframes exit {
+    to {
+      opacity: var(--tw-exit-opacity, 1);
+      transform: scale3d(var(--tw-exit-scale, 1), var(--tw-exit-scale, 1), var(--tw-exit-scale, 1));
+    }
+  }
+}
+
+/*
+ * Verba Cury cyber skin.
+ * Overrides shadcn design tokens (bg-card, border, text-foreground, …)
+ * scoped under .verba-cyber, plus explicit overrides for primitive classes
+ * to enforce sharp corners and neon detailing.
+ */
+.verba-cyber {
+  --background: oklch(0.05 0 0);
+  --foreground: oklch(0.97 0 0);
+  --card: oklch(0.08 0 0 / 60%);
+  --card-foreground: oklch(0.97 0 0);
+  --popover: oklch(0.08 0 0 / 95%);
+  --popover-foreground: oklch(0.97 0 0);
+  --primary: oklch(0.9 0.35 142);
+  --primary-foreground: oklch(0 0 0);
+  --secondary: oklch(0.15 0 0);
+  --secondary-foreground: oklch(0.9 0.35 142);
+  --muted: oklch(0.12 0 0 / 50%);
+  --muted-foreground: oklch(0.75 0 0);
+  --accent: oklch(0.18 0.05 142);
+  --accent-foreground: oklch(0.9 0.35 142);
+  --border: oklch(0.9 0.35 142 / 30%);
+  --input: oklch(0.9 0.35 142 / 30%);
+  --ring: oklch(0.9 0.35 142);
+  color: var(--foreground);
+}
+
+/* Sharp corners on all primitives */
+.verba-cyber .rounded-md,
+.verba-cyber .rounded-lg,
+.verba-cyber .rounded-xl,
+.verba-cyber .rounded-sm,
+.verba-cyber .sm\:rounded-lg,
+.verba-cyber [role="dialog"] {
+  border-radius: 0 !important;
+}
+
+.verba-cyber h1,
+.verba-cyber h2,
+.verba-cyber h3 {
+  color: #39FF14;
+}
+
+.verba-cyber label {
+  color: rgba(57, 255, 20, 0.85);
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-size: 10px;
+}
+
+/* Inputs / textareas / select triggers */
+.verba-cyber input:not([type="checkbox"]):not([type="radio"]),
+.verba-cyber textarea,
+.verba-cyber [role="combobox"] {
+  background-color: rgba(0, 0, 0, 0.55) !important;
+  border-color: rgba(57, 255, 20, 0.3) !important;
+  color: rgba(235, 235, 235, 0.95) !important;
+  backdrop-filter: blur(6px);
+}
+.verba-cyber input:focus,
+.verba-cyber textarea:focus,
+.verba-cyber [role="combobox"]:focus,
+.verba-cyber input:hover,
+.verba-cyber [role="combobox"]:hover {
+  border-color: #39FF14 !important;
+}
+
+/* Cards */
+.verba-cyber .bg-card,
+.verba-cyber [class*="bg-card"] {
+  background-color: rgba(0, 0, 0, 0.4) !important;
+  backdrop-filter: blur(10px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+/* Dialog content (portaled outside, but receives .verba-cyber via className) */
+.verba-cyber[role="dialog"],
+.verba-cyber [role="dialog"] {
+  background-color: rgba(5, 5, 5, 0.96) !important;
+  border-color: rgba(57, 255, 20, 0.45) !important;
+  box-shadow: 0 0 60px rgba(57, 255, 20, 0.18) !important;
+  color: rgb(240, 240, 240);
+}
+
+/* Override: dark blue border for specific dialogs */
+.verba-cyber[role="dialog"].dialog-border-blue,
+.verba-cyber [role="dialog"].dialog-border-blue {
+  border-color: #1e3a5f !important;
+  box-shadow: 0 0 40px rgba(30, 58, 95, 0.35) !important;
+}
+
+/* Select / popover content */
+.verba-cyber.bg-popover,
+.verba-cyber .bg-popover,
+[class*="verba-cyber"] [role="listbox"] {
+  background-color: rgba(0, 0, 0, 0.92) !important;
+  border-color: rgba(57, 255, 20, 0.3) !important;
+  color: rgb(229, 229, 229) !important;
+}
+
+/* Buttons */
+.verba-cyber button {
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-weight: 700;
+}
+.verba-cyber button.bg-primary {
+  background-color: transparent !important;
+  color: #39FF14 !important;
+  border: 1px solid #39FF14 !important;
+  box-shadow: 0 0 20px rgba(57, 255, 20, 0.35);
+}
+.verba-cyber button.bg-primary:hover {
+  background-color: #39FF14 !important;
+  color: #000 !important;
+}
+.verba-cyber button.border-input,
+.verba-cyber button.border {
+  border-color: rgba(57, 255, 20, 0.4) !important;
+}
+.verba-cyber button.border-input:hover,
+.verba-cyber button.border:hover {
+  border-color: #39FF14 !important;
+  color: #39FF14 !important;
+}
+
+/* Tables */
+.verba-cyber table {
+  color: rgba(230, 230, 230, 0.92);
+}
+.verba-cyber thead {
+  background-color: rgba(0, 0, 0, 0.4);
+}
+.verba-cyber th {
+  color: #39FF14 !important;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 10px;
+}
+.verba-cyber td,
+.verba-cyber th,
+.verba-cyber tr {
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+.verba-cyber tbody tr:hover {
+  background-color: rgba(57, 255, 20, 0.05) !important;
+}
+
+/* Tabs */
+.verba-cyber [role="tablist"] {
+  background-color: rgba(0, 0, 0, 0.5) !important;
+  border: 1px solid rgba(57, 255, 20, 0.25);
+}
+.verba-cyber [role="tab"] {
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-size: 10px;
+  color: rgba(230, 230, 230, 0.6);
+}
+.verba-cyber [role="tab"][data-state="active"] {
+  background-color: rgba(57, 255, 20, 0.15) !important;
+  color: #39FF14 !important;
+  box-shadow: inset 0 -2px 0 #39FF14;
+}
+
+/* Muted backgrounds (small info boxes) */
+.verba-cyber .bg-muted\/40,
+.verba-cyber .bg-muted\/50,
+.verba-cyber .bg-muted {
+  background-color: rgba(57, 255, 20, 0.06) !important;
+  border: 1px solid rgba(57, 255, 20, 0.2);
+}
+
+/* Cyberpunk neon toasts (sonner) */
+.cyber-toaster [data-sonner-toast] {
+  background: rgba(5, 5, 5, 0.95) !important;
+  border: 1px solid rgba(57, 255, 20, 0.45) !important;
+  border-radius: 0 !important;
+  box-shadow: 0 0 40px rgba(57, 255, 20, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.04) !important;
+  color: rgb(240, 240, 240) !important;
+  font-family: Arial, Helvetica, sans-serif !important;
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+  font-size: 15px !important;
+  line-height: 1.55 !important;
+  padding: 18px 22px !important;
+  min-width: 340px !important;
+  max-width: min(420px, calc(100vw - 32px)) !important;
+}
+
+.cyber-toaster [data-sonner-toast][data-type="success"] {
+  border-color: rgba(57, 255, 20, 0.6) !important;
+  box-shadow: 0 0 40px rgba(57, 255, 20, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.04) !important;
+}
+
+.cyber-toaster [data-sonner-toast][data-type="error"] {
+  border-color: rgba(239, 68, 68, 0.6) !important;
+  box-shadow: 0 0 40px rgba(239, 68, 68, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.04) !important;
+}
+
+.cyber-toaster [data-sonner-toast][data-type="warning"] {
+  border-color: rgba(249, 115, 22, 0.6) !important;
+  box-shadow: 0 0 40px rgba(249, 115, 22, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.04) !important;
+}
+
+.cyber-toaster [data-sonner-toast] [data-title] {
+  color: rgb(245, 245, 245) !important;
+  font-weight: 700 !important;
+  letter-spacing: 0 !important;
+  font-size: 15px !important;
+  line-height: 1.35 !important;
+  margin-bottom: 6px !important;
+}
+
+.cyber-toaster [data-sonner-toast][data-type="success"] [data-title] {
+  color: #39FF14 !important;
+}
+
+.cyber-toaster [data-sonner-toast][data-type="error"] [data-title] {
+  color: #ef4444 !important;
+}
+
+.cyber-toaster [data-sonner-toast] [data-description] {
+  color: rgba(200, 200, 200, 0.9) !important;
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+  font-size: 14px !important;
+  line-height: 1.55 !important;
+}
+
+.cyber-toaster [data-sonner-toast] button {
+  text-transform: uppercase !important;
+  letter-spacing: 0.08em !important;
+  font-size: 11px !important;
+  border-radius: 0 !important;
+}
+
+.cyber-toaster [data-sonner-toast] [data-close-button] {
+  background: rgba(0, 0, 0, 0.6) !important;
+  border: 1px solid rgba(57, 255, 20, 0.3) !important;
+  color: rgba(240, 240, 240, 0.8) !important;
+  border-radius: 0 !important;
+}
+
+.cyber-toaster [data-sonner-toast] [data-close-button]:hover {
+  background: rgba(57, 255, 20, 0.15) !important;
+  color: #39FF14 !important;
+  border-color: #39FF14 !important;
+}
+
+.cyber-toaster [data-sonner-toast] [data-icon] {
+  color: #39FF14 !important;
+}
+
+.cyber-toaster [data-sonner-toast][data-type="error"] [data-icon] {
+  color: #ef4444 !important;
+}
+
+.cyber-toaster [data-sonner-toast][data-type="warning"] [data-icon] {
+  color: #f97316 !important;
+}

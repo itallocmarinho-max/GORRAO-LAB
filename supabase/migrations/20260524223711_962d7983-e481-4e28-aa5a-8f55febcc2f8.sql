@@ -1,0 +1,1 @@
+CREATE POLICY "Authenticated read gerentes" ON public.gerentes FOR SELECT TO authenticated USING (true);

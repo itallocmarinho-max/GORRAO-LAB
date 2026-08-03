@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS public.vendas_realizadas_pv_uq;

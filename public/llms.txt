@@ -1,0 +1,9 @@
+# DIRETORIA GORRÃO
+
+> Plataforma corporativa da Diretoria Gorrão para gestão financeira, prestação de contas, validação de verbas e indicadores executivos.
+
+## Pages
+
+- [Início](/): Página inicial com redirecionamento para login ou dashboard.
+- [Entrar](/login): Acesso de usuários autenticados à plataforma.
+- [Painel Corporativo](/painel-corporativo): Dashboard executivo com vendas, corretores, financeiro, metas e indicadores.

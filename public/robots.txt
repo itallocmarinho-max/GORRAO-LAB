@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /dashboard
+Disallow: /reset-password
+
+Sitemap: https://diretoriagorrao.lovable.app/sitemap.xml

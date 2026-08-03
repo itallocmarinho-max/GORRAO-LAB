@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX IF NOT EXISTS vendas_realizadas_pv_uq ON public.vendas_realizadas(pv);

@@ -1,0 +1,1 @@
+ALTER TABLE public.formularios ADD COLUMN IF NOT EXISTS semana_inicio date;

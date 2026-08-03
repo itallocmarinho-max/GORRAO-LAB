@@ -1,0 +1,2 @@
+ALTER TABLE public.formularios DROP CONSTRAINT IF EXISTS formularios_status_check;
+ALTER TABLE public.formularios ADD CONSTRAINT formularios_status_check CHECK (status IN ('editando','finalizado','validado','reprovado'));

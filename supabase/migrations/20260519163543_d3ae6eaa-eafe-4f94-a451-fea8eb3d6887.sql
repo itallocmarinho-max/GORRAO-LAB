@@ -1,0 +1,1 @@
+ALTER TABLE public.formularios ADD COLUMN IF NOT EXISTS acelera_finalizado_em timestamptz, ADD COLUMN IF NOT EXISTS acelera_finalizado_por uuid;
