@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { pushUndo } from "@/lib/undo";
-import { ArrowLeft, Plus, Trash2, Settings2, Package, Power, PowerOff, Tag, X, CalendarCheck, Radar, Users, FolderKanban, ChevronRight } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Settings2, Package, Power, PowerOff, Tag, X, CalendarCheck, Radar, Users, FolderKanban, ChevronRight, Sheet } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { CyberBackdrop } from "@/components/CyberBackdrop";
 import { Badge } from "@/components/ui/badge";
@@ -248,6 +248,7 @@ function HubBotoes({ onSelect }: { onSelect: (s: "plantoes" | "produtos") => voi
     { key: "produtos", title: "PREVISÃO", icon: Package, onClick: () => onSelect("produtos") },
     { key: "c2s", title: "C2S", icon: Radar, to: "/admin/leads" },
     { key: "usuarios", title: "USUÁRIOS", icon: Users, to: "/admin/usuarios" },
+    { key: "vendas", title: "VENDAS", icon: Sheet, to: "/admin/vendas" },
     { key: "pastas", title: "PASTAS", icon: FolderKanban, to: "/pastas" },
   ];
 

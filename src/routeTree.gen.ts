@@ -27,6 +27,7 @@ import { Route as AppAceleraRouteImport } from './routes/_app.acelera'
 import { Route as AppAdminIndexRouteImport } from './routes/_app.admin.index'
 import { Route as ApiPublicFacebookLeadsRouteImport } from './routes/api.public.facebook-leads'
 import { Route as AppFormulariosIdRouteImport } from './routes/_app.formularios.$id'
+import { Route as AppAdminVendasRouteImport } from './routes/_app.admin.vendas'
 import { Route as AppAdminUsuariosRouteImport } from './routes/_app.admin.usuarios'
 import { Route as AppAdminPainelRouteImport } from './routes/_app.admin.painel'
 import { Route as AppAdminLeadsRouteImport } from './routes/_app.admin.leads'
@@ -122,6 +123,11 @@ const AppFormulariosIdRoute = AppFormulariosIdRouteImport.update({
   path: '/formularios/$id',
   getParentRoute: () => AppRoute,
 } as any)
+const AppAdminVendasRoute = AppAdminVendasRouteImport.update({
+  id: '/vendas',
+  path: '/vendas',
+  getParentRoute: () => AppAdminRoute,
+} as any)
 const AppAdminUsuariosRoute = AppAdminUsuariosRouteImport.update({
   id: '/usuarios',
   path: '/usuarios',
@@ -168,6 +174,7 @@ export interface FileRoutesByFullPath {
   '/admin/leads': typeof AppAdminLeadsRoute
   '/admin/painel': typeof AppAdminPainelRoute
   '/admin/usuarios': typeof AppAdminUsuariosRoute
+  '/admin/vendas': typeof AppAdminVendasRoute
   '/formularios/$id': typeof AppFormulariosIdRoute
   '/api/public/facebook-leads': typeof ApiPublicFacebookLeadsRoute
   '/admin/': typeof AppAdminIndexRoute
@@ -191,6 +198,7 @@ export interface FileRoutesByTo {
   '/admin/leads': typeof AppAdminLeadsRoute
   '/admin/painel': typeof AppAdminPainelRoute
   '/admin/usuarios': typeof AppAdminUsuariosRoute
+  '/admin/vendas': typeof AppAdminVendasRoute
   '/formularios/$id': typeof AppFormulariosIdRoute
   '/api/public/facebook-leads': typeof ApiPublicFacebookLeadsRoute
   '/admin': typeof AppAdminIndexRoute
@@ -217,6 +225,7 @@ export interface FileRoutesById {
   '/_app/admin/leads': typeof AppAdminLeadsRoute
   '/_app/admin/painel': typeof AppAdminPainelRoute
   '/_app/admin/usuarios': typeof AppAdminUsuariosRoute
+  '/_app/admin/vendas': typeof AppAdminVendasRoute
   '/_app/formularios/$id': typeof AppFormulariosIdRoute
   '/api/public/facebook-leads': typeof ApiPublicFacebookLeadsRoute
   '/_app/admin/': typeof AppAdminIndexRoute
@@ -243,6 +252,7 @@ export interface FileRouteTypes {
     | '/admin/leads'
     | '/admin/painel'
     | '/admin/usuarios'
+    | '/admin/vendas'
     | '/formularios/$id'
     | '/api/public/facebook-leads'
     | '/admin/'
@@ -266,6 +276,7 @@ export interface FileRouteTypes {
     | '/admin/leads'
     | '/admin/painel'
     | '/admin/usuarios'
+    | '/admin/vendas'
     | '/formularios/$id'
     | '/api/public/facebook-leads'
     | '/admin'
@@ -291,6 +302,7 @@ export interface FileRouteTypes {
     | '/_app/admin/leads'
     | '/_app/admin/painel'
     | '/_app/admin/usuarios'
+    | '/_app/admin/vendas'
     | '/_app/formularios/$id'
     | '/api/public/facebook-leads'
     | '/_app/admin/'
@@ -436,6 +448,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppFormulariosIdRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/admin/vendas': {
+      id: '/_app/admin/vendas'
+      path: '/vendas'
+      fullPath: '/admin/vendas'
+      preLoaderRoute: typeof AppAdminVendasRouteImport
+      parentRoute: typeof AppAdminRoute
+    }
     '/_app/admin/usuarios': {
       id: '/_app/admin/usuarios'
       path: '/usuarios'
@@ -490,6 +509,7 @@ interface AppAdminRouteChildren {
   AppAdminLeadsRoute: typeof AppAdminLeadsRoute
   AppAdminPainelRoute: typeof AppAdminPainelRoute
   AppAdminUsuariosRoute: typeof AppAdminUsuariosRoute
+  AppAdminVendasRoute: typeof AppAdminVendasRoute
   AppAdminIndexRoute: typeof AppAdminIndexRoute
 }
 
@@ -497,6 +517,7 @@ const AppAdminRouteChildren: AppAdminRouteChildren = {
   AppAdminLeadsRoute: AppAdminLeadsRoute,
   AppAdminPainelRoute: AppAdminPainelRoute,
   AppAdminUsuariosRoute: AppAdminUsuariosRoute,
+  AppAdminVendasRoute: AppAdminVendasRoute,
   AppAdminIndexRoute: AppAdminIndexRoute,
 }
 
