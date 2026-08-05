@@ -167,6 +167,7 @@ export type Database = {
           inativo_mes: number | null
           nome: string
           superintendente_id: string
+          tipo_operacao: string | null
           updated_at: string
         }
         Insert: {
@@ -177,6 +178,7 @@ export type Database = {
           inativo_mes?: number | null
           nome: string
           superintendente_id: string
+          tipo_operacao?: string | null
           updated_at?: string
         }
         Update: {
@@ -187,6 +189,7 @@ export type Database = {
           inativo_mes?: number | null
           nome?: string
           superintendente_id?: string
+          tipo_operacao?: string | null
           updated_at?: string
         }
         Relationships: []
@@ -932,8 +935,10 @@ export type Database = {
       }
       profiles: {
         Row: {
+          ativo: boolean
           cargo: string | null
           created_at: string
+          desativado_em: string | null
           diretor_id: string | null
           email: string | null
           id: string
@@ -941,8 +946,10 @@ export type Database = {
           vinculado_id: string | null
         }
         Insert: {
+          ativo?: boolean
           cargo?: string | null
           created_at?: string
+          desativado_em?: string | null
           diretor_id?: string | null
           email?: string | null
           id: string
@@ -950,8 +957,10 @@ export type Database = {
           vinculado_id?: string | null
         }
         Update: {
+          ativo?: boolean
           cargo?: string | null
           created_at?: string
+          desativado_em?: string | null
           diretor_id?: string | null
           email?: string | null
           id?: string

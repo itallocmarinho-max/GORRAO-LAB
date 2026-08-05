@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { gerenteDisponivelEm, perfilDisponivelEm } from "@/lib/gerentes";
 
 const TokenInput = z.object({ token: z.string().min(1) });
 
@@ -401,16 +402,21 @@ export const vendasHierarquiaList = createServerFn({ method: "POST" })
   });
 
 // ============ Previsão (forecast) — list sups + create ============
+const PrevisaoPeriodoInput = TokenInput.extend({
+  mes_referencia: z.number().int().min(1).max(12),
+  ano_referencia: z.number().int().min(2000).max(2100),
+});
 export const previsaoSupsList = createServerFn({ method: "POST" })
-  .inputValidator((i: unknown) => TokenInput.parse(i))
+  .inputValidator((i: unknown) => PrevisaoPeriodoInput.parse(i))
   .handler(async ({ data }) => {
     await assertAuth(data.token);
     const { data: profs, error } = await supabaseAdmin
       .from("profiles")
-      .select("id, nome, email, cargo")
+      .select("id, nome, email, cargo, ativo, desativado_em")
       .in("cargo", ["superintendente"]);
     if (error) throw new Error(error.message);
-    return (profs ?? []).map((p: any) => ({ id: p.id, nome: p.nome || p.email || "" }))
+    return (profs ?? []).filter((p) => perfilDisponivelEm(p, data.mes_referencia, data.ano_referencia))
+      .map((p: any) => ({ id: p.id, nome: p.nome || p.email || "" }))
       .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
   });
 
@@ -425,11 +431,43 @@ const PrevisaoCreateInput = z.object({
   observacao: z.string().max(1000).optional().nullable(),
 });
 
+async function assertHierarquiaDisponivelNoPeriodo(
+  superintendente: string,
+  gerentes: string[],
+  mes: number,
+  ano: number,
+) {
+  const { data: sup, error: supError } = await supabaseAdmin
+    .from("profiles")
+    .select("id, ativo, desativado_em")
+    .eq("cargo", "superintendente")
+    .eq("nome", superintendente)
+    .maybeSingle();
+  if (supError) throw new Error(supError.message);
+  if (!sup || !perfilDisponivelEm(sup, mes, ano)) {
+    throw new Error("Superintendente indisponível para o mês selecionado");
+  }
+  if (!gerentes.length) return;
+  const { data: cadastrados, error } = await supabaseAdmin
+    .from("gerentes")
+    .select("nome, ativo, inativo_mes, inativo_ano")
+    .eq("superintendente_id", sup.id)
+    .in("nome", gerentes);
+  if (error) throw new Error(error.message);
+  const disponiveis = new Set((cadastrados ?? [])
+    .filter((g) => gerenteDisponivelEm(g, mes, ano)).map((g) => g.nome));
+  const indisponivel = gerentes.find((nome) => !disponiveis.has(nome));
+  if (indisponivel) throw new Error(`${indisponivel} está indisponível para o mês selecionado`);
+}
+
 export const previsaoCreate = createServerFn({ method: "POST" })
   .inputValidator((i: unknown) => PrevisaoCreateInput.parse(i))
   .handler(async ({ data }) => {
     const userId = await assertAuth(data.token);
     await assertCanWrite(data.token);
+    await assertHierarquiaDisponivelNoPeriodo(
+      data.superintendente, [], data.mes_referencia, data.ano_referencia,
+    );
     const { error } = await supabaseAdmin.from("previsoes").insert({
       usuario_id: userId,
       superintendente: data.superintendente,
@@ -457,19 +495,19 @@ export const previsaoDelete = createServerFn({ method: "POST" })
   });
 
 // ============ Gerentes de um superintendente ============
-const PrevisaoGerentesInput = z.object({ token: z.string().min(1), superintendente_id: z.string().uuid() });
+const PrevisaoGerentesInput = PrevisaoPeriodoInput.extend({ superintendente_id: z.string().uuid() });
 export const previsaoGerentesList = createServerFn({ method: "POST" })
   .inputValidator((i: unknown) => PrevisaoGerentesInput.parse(i))
   .handler(async ({ data }) => {
     await assertAuth(data.token);
     const { data: gers, error } = await supabaseAdmin
       .from("gerentes")
-      .select("id, nome, ativo")
+      .select("id, nome, ativo, inativo_mes, inativo_ano, tipo_operacao")
       .eq("superintendente_id", data.superintendente_id)
-      .eq("ativo", true)
       .order("nome");
     if (error) throw new Error(error.message);
-    return (gers ?? []).map((g: any) => ({ id: g.id, nome: g.nome }));
+    return (gers ?? []).filter((g) => gerenteDisponivelEm(g, data.mes_referencia, data.ano_referencia))
+      .map((g: any) => ({ id: g.id, nome: g.nome, tipo_operacao: g.tipo_operacao }));
   });
 
 // ============ Previsão em massa (vários gerentes na mesma semana) ============
@@ -491,6 +529,10 @@ export const previsaoCreateBulk = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const userId = await assertAuth(data.token);
     await assertCanWrite(data.token);
+    await assertHierarquiaDisponivelNoPeriodo(
+      data.superintendente, data.itens.map((item) => item.gerente),
+      data.mes_referencia, data.ano_referencia,
+    );
     const rows = data.itens
       .filter((it) => it.preciso_vendas > 0)
       .map((it) => ({

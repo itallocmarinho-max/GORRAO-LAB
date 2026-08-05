@@ -60,6 +60,11 @@ const DeleteUserInput = z.object({
   user_id: z.string().uuid(),
 });
 
+const SetUserActiveInput = z.object({
+  token: z.string().min(1), user_id: z.string().uuid(), ativo: z.boolean(),
+  desativado_em: z.string().date().nullable(),
+});
+
 async function assertAdmin(token: string) {
   const { data, error } = await supabaseAdmin.auth.getUser(token);
   if (error || !data.user) throw new Error("Não autenticado");
@@ -122,7 +127,7 @@ export const adminListUsers = createServerFn({ method: "POST" })
     const { data: list, error } = await supabaseAdmin.auth.admin.listUsers({ perPage: 200 });
     if (error) throw new Error(error.message);
     const { data: allRoles } = await supabaseAdmin.from("user_roles").select("user_id, role");
-    const { data: allProfiles } = await supabaseAdmin.from("profiles").select("id, nome, cargo, diretor_id, vinculado_id");
+    const { data: allProfiles } = await supabaseAdmin.from("profiles").select("id, nome, cargo, diretor_id, vinculado_id, ativo, desativado_em");
     return list.users.map((u) => ({
       id: u.id,
       email: u.email,
@@ -131,8 +136,24 @@ export const adminListUsers = createServerFn({ method: "POST" })
       cargo: (allProfiles ?? []).find((p) => p.id === u.id)?.cargo ?? null,
       diretor_id: (allProfiles ?? []).find((p) => p.id === u.id)?.diretor_id ?? null,
       vinculado_id: (allProfiles ?? []).find((p) => p.id === u.id)?.vinculado_id ?? null,
+      ativo: (allProfiles ?? []).find((p) => p.id === u.id)?.ativo ?? true,
+      desativado_em: (allProfiles ?? []).find((p) => p.id === u.id)?.desativado_em ?? null,
       roles: (allRoles ?? []).filter((r) => r.user_id === u.id).map((r) => r.role),
     }));
+  });
+
+export const adminSetUserActive = createServerFn({ method: "POST" })
+  .inputValidator((input: unknown) => SetUserActiveInput.parse(input))
+  .handler(async ({ data }) => {
+    const callerId = await assertAdmin(data.token);
+    await assertCanWrite(data.token);
+    if (!data.ativo && callerId === data.user_id) throw new Error("Você não pode inativar sua própria conta");
+    if (!data.ativo && !data.desativado_em) throw new Error("Informe a data da desativação");
+    const { error } = await supabaseAdmin.from("profiles").update({
+      ativo: data.ativo, desativado_em: data.ativo ? null : data.desativado_em,
+    }).eq("id", data.user_id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
   });
 
 export const adminUpdateUserEmail = createServerFn({ method: "POST" })

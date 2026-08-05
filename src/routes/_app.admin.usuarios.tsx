@@ -12,9 +12,8 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { pushUndo } from "@/lib/undo";
-import { adminCreateUser, adminListUsers, adminUpdateUserEmail, adminUpdateUserName, adminUpdateUserCargo, adminSetUserAdmin, adminUpdateUserDiretor, adminUpdateUserVinculado, adminDeleteUser } from "@/functions/admin-users.functions";
-import { Pencil, Users, Trash2, Plus, ArrowLeft } from "lucide-react";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { adminCreateUser, adminListUsers, adminUpdateUserEmail, adminUpdateUserName, adminUpdateUserCargo, adminSetUserAdmin, adminUpdateUserDiretor, adminUpdateUserVinculado, adminSetUserActive } from "@/functions/admin-users.functions";
+import { Pencil, Users, Trash2, Plus, ArrowLeft, UserRoundX } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { fmtDateTime } from "@/lib/format";
 import { CyberBackdrop } from "@/components/CyberBackdrop";
@@ -45,12 +44,16 @@ function UsersPage() {
   const [editIsAdmin, setEditIsAdmin] = useState(false);
   const [gerSupId, setGerSupId] = useState<string | null>(null);
   const [gerSupNome, setGerSupNome] = useState<string>("");
-  const [gerentes, setGerentes] = useState<Array<{ id: string; nome: string; ativo: boolean; inativo_mes: number | null; inativo_ano: number | null }>>([]);
+  const [gerentes, setGerentes] = useState<Array<{ id: string; nome: string; ativo: boolean; inativo_mes: number | null; inativo_ano: number | null; tipo_operacao: "pdv" | "cia" | null }>>([]);
   const [novoGerente, setNovoGerente] = useState("");
+  const [novoGerenteTipo, setNovoGerenteTipo] = useState<"pdv" | "cia">("pdv");
   const [gerBusy, setGerBusy] = useState(false);
   const [inativarId, setInativarId] = useState<string | null>(null);
   const [inativarMes, setInativarMes] = useState<string>(String(new Date().getMonth() + 1));
   const [inativarAno, setInativarAno] = useState<string>(String(new Date().getFullYear()));
+  const [inativarUsuarioId, setInativarUsuarioId] = useState<string | null>(null);
+  const [inativarUsuarioNome, setInativarUsuarioNome] = useState("");
+  const [dataDesativacao, setDataDesativacao] = useState(new Date().toISOString().slice(0, 10));
 
   useEffect(() => {
     if (!loading && role !== "admin") navigate({ to: "/dashboard" });
@@ -97,7 +100,7 @@ function UsersPage() {
   const loadGerentes = async (supId: string) => {
     const { data, error } = await supabase
       .from("gerentes")
-      .select("id, nome, ativo, inativo_mes, inativo_ano")
+      .select("id, nome, ativo, inativo_mes, inativo_ano, tipo_operacao")
       .eq("superintendente_id", supId)
       .order("nome");
     if (error) { toast.error(error.message); return; }
@@ -117,11 +120,39 @@ function UsersPage() {
     setGerBusy(true);
     const { error } = await supabase
       .from("gerentes")
-      .insert({ superintendente_id: gerSupId, nome: novoGerente.trim() });
+      .insert({ superintendente_id: gerSupId, nome: novoGerente.trim(), tipo_operacao: novoGerenteTipo });
     setGerBusy(false);
     if (error) return toast.error(error.message);
     setNovoGerente("");
+    setNovoGerenteTipo("pdv");
     loadGerentes(gerSupId);
+  };
+
+  const alterarTipoGerente = async (id: string, tipo_operacao: "pdv" | "cia") => {
+    if (!gerSupId) return;
+    const { error } = await supabase.from("gerentes").update({ tipo_operacao }).eq("id", id);
+    if (error) return toast.error(error.message);
+    loadGerentes(gerSupId);
+  };
+
+  const confirmarInativarUsuario = async () => {
+    if (!inativarUsuarioId || !dataDesativacao) return;
+    try {
+      const token = await getToken();
+      await adminSetUserActive({ data: { token, user_id: inativarUsuarioId, ativo: false, desativado_em: dataDesativacao } });
+      toast.success("Usuário inativado e mantido no histórico");
+      setInativarUsuarioId(null);
+      load();
+    } catch (err: any) { toast.error(err.message); }
+  };
+
+  const reativarUsuario = async (id: string) => {
+    try {
+      const token = await getToken();
+      await adminSetUserActive({ data: { token, user_id: id, ativo: true, desativado_em: null } });
+      toast.success("Usuário reativado");
+      load();
+    } catch (err: any) { toast.error(err.message); }
   };
 
   const removerGerente = async (id: string) => {
@@ -308,6 +339,7 @@ function UsersPage() {
                 <TableHead>Email</TableHead>
                 <TableHead>Cargo</TableHead>
                 <TableHead>Perfis</TableHead>
+                <TableHead>Status</TableHead>
                 <TableHead>Criado em</TableHead>
                 <TableHead className="w-12"></TableHead>
               </TableRow>
@@ -323,6 +355,11 @@ function UsersPage() {
                     {u.roles.map((rr: string) => (
                       <Badge key={rr} variant={rr === "admin" ? "default" : "secondary"}>{rr}</Badge>
                     ))}
+                  </TableCell>
+                  <TableCell>
+                    {u.ativo ? <Badge variant="outline">Ativo</Badge> : (
+                      <div><Badge variant="secondary">Inativo</Badge><div className="text-xs text-muted-foreground">{u.desativado_em ? new Date(`${u.desativado_em}T12:00:00`).toLocaleDateString("pt-BR") : "—"}</div></div>
+                    )}
                   </TableCell>
                   <TableCell>{u.created_at ? fmtDateTime(u.created_at) : "-"}</TableCell>
                   <TableCell className="flex items-center gap-1">
@@ -342,38 +379,12 @@ function UsersPage() {
                     }} title="Editar usuário">
                       <Pencil className="h-4 w-4" />
                     </Button>
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
-                        <Button variant="ghost" size="icon" title="Excluir usuário">
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent className="verba-cyber">
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>Excluir usuário?</AlertDialogTitle>
-                          <AlertDialogDescription>
-                            {u.nome || u.email} será removido permanentemente. Esta ação não pode ser desfeita.
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                          <AlertDialogAction
-                            onClick={async () => {
-                              try {
-                                const token = await getToken();
-                                await adminDeleteUser({ data: { token, user_id: u.id } });
-                                toast.success("Usuário excluído");
-                                load();
-                              } catch (err: any) {
-                                toast.error(err.message);
-                              }
-                            }}
-                          >
-                            Excluir
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
+                    {u.ativo ? (
+                      <Button variant="ghost" size="icon" title="Inativar usuário" onClick={() => {
+                        setInativarUsuarioId(u.id); setInativarUsuarioNome(u.nome || u.email);
+                        setDataDesativacao(new Date().toISOString().slice(0, 10));
+                      }}><UserRoundX className="h-4 w-4 text-destructive" /></Button>
+                    ) : <Button variant="outline" size="sm" onClick={() => reativarUsuario(u.id)}>Reativar</Button>}
                   </TableCell>
                 </TableRow>
               ))}
@@ -473,13 +484,17 @@ function UsersPage() {
       <Dialog open={!!gerSupId} onOpenChange={(o) => { if (!o) { setGerSupId(null); setGerentes([]); } }}>
         <DialogContent className="verba-cyber">
           <DialogHeader><DialogTitle>Gerentes de {gerSupNome}</DialogTitle></DialogHeader>
-          <form onSubmit={addGerente} className="flex gap-2">
+          <form onSubmit={addGerente} className="grid grid-cols-[1fr_120px_auto] gap-2">
             <Input
               value={novoGerente}
               onChange={(e) => setNovoGerente(e.target.value)}
               placeholder="Nome do gerente"
               maxLength={120}
             />
+            <Select value={novoGerenteTipo} onValueChange={(v) => setNovoGerenteTipo(v as "pdv" | "cia")}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent><SelectItem value="pdv">PDV</SelectItem><SelectItem value="cia">CIA</SelectItem></SelectContent>
+            </Select>
             <Button type="submit" disabled={gerBusy || !novoGerente.trim()}>
               <Plus className="h-4 w-4 mr-1" /> Adicionar
             </Button>
@@ -492,6 +507,7 @@ function UsersPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Nome</TableHead>
+                    <TableHead className="w-28">Tipo</TableHead>
                     <TableHead className="w-24">Ativo</TableHead>
                     <TableHead>Inativo desde</TableHead>
                     <TableHead className="w-12"></TableHead>
@@ -501,6 +517,12 @@ function UsersPage() {
                   {gerentes.map((g) => (
                     <TableRow key={g.id}>
                       <TableCell>{g.nome}</TableCell>
+                      <TableCell>
+                        <Select value={g.tipo_operacao ?? "pdv"} onValueChange={(v) => alterarTipoGerente(g.id, v as "pdv" | "cia")}>
+                          <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+                          <SelectContent><SelectItem value="pdv">PDV</SelectItem><SelectItem value="cia">CIA</SelectItem></SelectContent>
+                        </Select>
+                      </TableCell>
                       <TableCell><Switch checked={g.ativo} onCheckedChange={(v) => toggleGerente(g.id, v)} /></TableCell>
                       <TableCell className="text-sm text-muted-foreground">
                         {!g.ativo && g.inativo_mes && g.inativo_ano
@@ -520,9 +542,17 @@ function UsersPage() {
           </div>
         </DialogContent>
       </Dialog>
+      <Dialog open={!!inativarUsuarioId} onOpenChange={(o) => { if (!o) setInativarUsuarioId(null); }}>
+        <DialogContent className="verba-cyber">
+          <DialogHeader><DialogTitle>Inativar usuário</DialogTitle></DialogHeader>
+          <p className="text-sm text-muted-foreground">{inativarUsuarioNome} continuará no histórico e poderá ser usado em lançamentos até o fim do mês da desativação.</p>
+          <div><Label>Data da desativação</Label><Input type="date" value={dataDesativacao} onChange={(e) => setDataDesativacao(e.target.value)} /></div>
+          <DialogFooter><Button variant="outline" onClick={() => setInativarUsuarioId(null)}>Cancelar</Button><Button onClick={confirmarInativarUsuario}>Confirmar inativação</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
       <Dialog open={!!inativarId} onOpenChange={(o) => { if (!o) setInativarId(null); }}>
         <DialogContent className="verba-cyber">
-          <DialogHeader><DialogTitle>Inativar gerente a partir de</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>Inativar gerente no mês</DialogTitle></DialogHeader>
           <p className="text-sm text-muted-foreground">
             Até o mês/ano informado o gerente continua disponível para novos lançamentos.
             Depois disso ele aparece apenas em filtros de dados antigos (histórico).

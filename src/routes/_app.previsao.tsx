@@ -978,20 +978,21 @@ function NovaPrevisaoDialog({ token, onDone }: { token: string; onDone: () => vo
     if (!open || !token) return;
     (async () => {
       try {
-        const r = (await previsaoSupsList({ data: { token } })) as { id: string; nome: string }[];
+        const r = (await previsaoSupsList({ data: { token, mes_referencia: mes, ano_referencia: ano } })) as { id: string; nome: string }[];
         setSups(r);
+        if (supId && !r.some((s) => s.id === supId)) setSupId("");
       } catch (e: any) {
         toast.error(e?.message ?? "Erro ao carregar superintendentes");
       }
     })();
-  }, [open, token]);
+  }, [open, token, mes, ano, supId]);
 
   useEffect(() => {
     if (!supId || !token) { setGerentes([]); setQuantPorGer({}); return; }
     (async () => {
       setLoadingGer(true);
       try {
-        const r = (await previsaoGerentesList({ data: { token, superintendente_id: supId } })) as { id: string; nome: string }[];
+        const r = (await previsaoGerentesList({ data: { token, superintendente_id: supId, mes_referencia: mes, ano_referencia: ano } })) as { id: string; nome: string }[];
         setGerentes(r);
         setQuantPorGer({});
       } catch (e: any) {
@@ -1000,7 +1001,7 @@ function NovaPrevisaoDialog({ token, onDone }: { token: string; onDone: () => vo
         setLoadingGer(false);
       }
     })();
-  }, [supId, token]);
+  }, [supId, token, mes, ano]);
 
   const supNome = sups.find((s) => s.id === supId)?.nome ?? "";
 
