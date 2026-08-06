@@ -1,20 +1,45 @@
 import { createFileRoute, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { useAuth } from "@/hooks/useAuth";
-import { ActiveFormTypeProvider } from "@/hooks/useActiveFormType";
+import { ActiveFormTypeProvider, useActiveFormType } from "@/hooks/useActiveFormType";
 import { UndoButton } from "@/components/UndoButton";
 import { CyberBackdrop } from "@/components/CyberBackdrop";
 import { HeaderNavigationMenu } from "@/components/HeaderNavigationMenu";
+import { tipoLabel } from "@/lib/form-types";
 
 export const Route = createFileRoute("/_app")({
   component: AppLayout,
 });
+
+function AppHeader({ formulario }: { formulario: boolean }) {
+  const { activeFormType } = useActiveFormType();
+  return (
+    <header className="sticky top-0 z-40 grid h-14 grid-cols-[1fr_auto_1fr] items-center border-b border-[#39FF14]/20 bg-black/95 px-4 backdrop-blur-xl">
+      <div className="flex items-center gap-2 justify-self-start">
+        <div className="flex h-6 w-6 items-center justify-center border border-[#39FF14]">
+          <span className="text-[10px] font-black text-[#39FF14]">G</span>
+        </div>
+        <span className="text-[11px] font-bold uppercase tracking-[0.3em] text-white/90">GORRÃO <span className="text-[#39FF14]">/ /</span> LAB</span>
+      </div>
+      {formulario && activeFormType && (
+        <h1 className="justify-self-center text-xs font-bold uppercase tracking-[0.35em] text-[#39FF14]">
+          {tipoLabel(activeFormType).replace(/^\/\/\s*/, "")}
+        </h1>
+      )}
+      <div className="flex items-center gap-2 justify-self-end">
+        <UndoButton />
+        <HeaderNavigationMenu />
+      </div>
+    </header>
+  );
+}
 
 function AppLayout() {
   const { user, session, loading } = useAuth();
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const dashboardHeader = pathname === "/dashboard";
+  const formularioHeader = pathname.startsWith("/formularios/");
   useEffect(() => {
     if (!loading && !user) navigate({ to: "/login" });
   }, [user, loading, navigate]);
@@ -31,20 +56,7 @@ function AppLayout() {
     <ActiveFormTypeProvider>
         <div className="min-h-screen w-full bg-black text-white">
             {!dashboardHeader && (
-              <header className="sticky top-0 z-10 flex h-14 items-center gap-3 border-b border-white/10 bg-black px-4">
-                <div className="flex items-center gap-2">
-                  <div className="h-6 w-6 rounded-sm border border-[#39FF14] flex items-center justify-center">
-                    <span className="text-[#39FF14] text-[10px] font-black">G</span>
-                  </div>
-                  <span className="text-[11px] tracking-[0.3em] font-bold text-white/90 uppercase">
-                    GORRÃO / / LAB
-                  </span>
-                </div>
-                <div className="ml-auto flex items-center gap-2">
-                  <UndoButton />
-                  <HeaderNavigationMenu />
-                </div>
-              </header>
+              <AppHeader formulario={formularioHeader} />
             )}
             <main
               className={`verba-cyber relative bg-black overflow-hidden ${dashboardHeader ? "min-h-screen" : "min-h-[calc(100vh-3.5rem)]"}`}

@@ -143,10 +143,14 @@ function nowLocalInput() {
 }
 
 function aceleraSplit(v: number) {
-  if (v === 5000) return { corretor: 5000, gerente: 2000, sup: 1000, diretor: 500 };
-  if (v === 3000) return { corretor: 3000, gerente: 1200, sup: 600, diretor: 300 };
+  const bases: Record<number, number> = { 2550: 1500, 5100: 3000, 8500: 5000, 13600: 8000, 17000: 10000 };
+  const corretor = bases[v];
+  if (corretor) return { corretor, gerente: corretor * 0.4, sup: corretor * 0.2, diretor: corretor * 0.1 };
   return { corretor: 0, gerente: 0, sup: 0, diretor: 0 };
 }
+
+type AceleraPacote = "2550" | "5100" | "8500" | "13600" | "17000" | "";
+const ACELERA_PACOTES = [2550, 5100, 8500, 13600, 17000] as const;
 
 function FormDetail() {
   const { id } = Route.useParams();
@@ -194,13 +198,14 @@ function FormDetail() {
   const [planVerbaGer, setPlanVerbaGer] = useState("");
   const [planVerbaSup, setPlanVerbaSup] = useState("");
   const [aceleraSup, setAceleraSup] = useState("");
-  const [aceleraRows, setAceleraRows] = useState<Array<{ corretor: string; valor: "5000" | "3000" | "" }>>([
+  const [aceleraRows, setAceleraRows] = useState<Array<{ corretor: string; valor: AceleraPacote }>>([
     { corretor: "", valor: "" },
   ]);
   const [editingAceleraGerente, setEditingAceleraGerente] = useState<string | null>(null);
   const [editingGerente, setEditingGerente] = useState<string | null>(null);
   const [editingVerbaId, setEditingVerbaId] = useState<string | null>(null);
   const [filtroGerente, setFiltroGerente] = useState<string>("todos");
+  const [filtrosContratacaoAbertos, setFiltrosContratacaoAbertos] = useState(false);
   // Lançamento massivo por gerente (gastos_pessoais)
   const [bulkOpen, setBulkOpen] = useState(false);
   type BulkRow = { gerente: string; recebedor: string; tipoGasto: string; descricao: string; valor: string };
@@ -579,7 +584,7 @@ function FormDetail() {
       rows.length > 0
         ? rows.map((l) => ({
             corretor: l.nome_recebedor || "",
-            valor: (Number(l.valor) === 5000 ? "5000" : Number(l.valor) === 3000 ? "3000" : "") as "5000" | "3000" | "",
+            valor: (ACELERA_PACOTES.includes(Number(l.valor) as (typeof ACELERA_PACOTES)[number]) ? String(Number(l.valor)) : "") as AceleraPacote,
           }))
         : [{ corretor: "", valor: "" }],
     );
@@ -819,7 +824,7 @@ function FormDetail() {
         const rows: TablesInsert<"lancamentos">[] = [];
         for (const r of aceleraRows) {
           const v = Number(r.valor);
-          if (!r.corretor.trim() || (v !== 5000 && v !== 3000)) continue;
+          if (!r.corretor.trim() || !ACELERA_PACOTES.includes(v as (typeof ACELERA_PACOTES)[number])) continue;
           const sp = aceleraSplit(v);
           rows.push({
             formulario_id: id,
@@ -979,6 +984,15 @@ function FormDetail() {
     const { error } = await supabase.from("lancamentos").delete().eq("id", lancId);
     if (error) return toast.error(error.message);
     pushUndo("Lançamento excluído", [{ table: "lancamentos", rows: snap || [] }]);
+    load();
+  };
+
+  const deletePlanejamentoGerente = async (gerenteNome: string) => {
+    const { data: snap } = await supabase.from("lancamentos").select("*").eq("formulario_id", id).eq("gerente", gerenteNome);
+    const { error } = await supabase.from("lancamentos").delete().eq("formulario_id", id).eq("gerente", gerenteNome);
+    if (error) return toast.error(error.message);
+    pushUndo(`Planejamento de ${gerenteNome} excluído`, [{ table: "lancamentos", rows: snap || [] }]);
+    toast.success("Lançamentos do gerente excluídos com sucesso.");
     load();
   };
 
@@ -1430,11 +1444,11 @@ function FormDetail() {
 
       <div>
         <div className="flex items-center gap-3 flex-wrap">
-          <h1 className={`${isCyber && tipo === "gastos_pessoais" ? "text-[10px] font-bold" : "text-2xl font-semibold"} ${isCyber ? "text-[#39FF14] uppercase tracking-[0.25em]" : ""}`}>
+          {tipo !== "contratacao" && tipo !== "planejamento" && <h1 className={`${isCyber && tipo === "gastos_pessoais" ? "text-[10px] font-bold" : "text-2xl font-semibold"} ${isCyber ? "text-[#39FF14] uppercase tracking-[0.25em]" : ""}`}>
             {isCyber
               ? (tipoLabel(tipo).toUpperCase().startsWith("//") ? tipoLabel(tipo).toUpperCase() : `// ${tipoLabel(tipo).toUpperCase()}`)
               : (form.nome || "Prestação")}
-          </h1>
+          </h1>}
           {!isCyber && <Badge variant="outline" className="text-xs">{tipoLabel(tipo)}</Badge>}
           {form.status === "finalizado" && (
             <Badge variant="secondary" className={isCyber ? "rounded-none bg-black border border-orange-500 text-orange-400 uppercase tracking-widest text-[10px]" : "bg-orange-100 text-orange-700"}><Lock className="mr-1 h-3 w-3" />Finalizado</Badge>
@@ -1474,10 +1488,18 @@ function FormDetail() {
             {form.mes_referencia && form.ano_referencia && (
               <>Ref: {MESES[form.mes_referencia - 1]}/{form.ano_referencia}</>
             )}
-            {form.mes_referencia && form.ano_referencia && form.responsavel && " · "}
-            {form.responsavel && (
-              <>Responsável: <span className="text-foreground">{form.responsavel}</span></>
+            {form.mes_referencia && form.ano_referencia && (form.responsavel || form.nome) && " · "}
+            {(form.responsavel || form.nome) && (
+              <>Responsável: <span className="text-[#39FF14]">{form.responsavel || form.nome}</span></>
             )}
+            {form.diretor && <> · Diretoria: <span className="text-foreground">{form.diretor}</span></>}
+          </p>
+        )}
+        {tipo === "planejamento" && (
+          <p className="mt-1 text-[11px] uppercase tracking-widest text-gray-500">
+            {form.mes_referencia && form.ano_referencia && <>Ref: {MESES[form.mes_referencia - 1]}/{form.ano_referencia}</>}
+            {(form.responsavel || form.nome) && <> · Responsável: <span className="text-[#39FF14]">{form.responsavel || form.nome}</span></>}
+            {form.diretor && <> · Diretoria: <span className="text-white/70">{form.diretor}</span></>}
           </p>
         )}
       </div>
@@ -1518,7 +1540,7 @@ function FormDetail() {
             <XCircle className="mr-1 h-4 w-4" /> Reprovado
           </Button>
         )}
-        {tipo !== "gastos_pessoais" && (peopleOpts.sups.length + peopleOpts.gers.length + gerentesDisponiveis.length) > 0 && (
+        {tipo !== "gastos_pessoais" && tipo !== "contratacao" && tipo !== "planejamento" && (peopleOpts.sups.length + peopleOpts.gers.length + gerentesDisponiveis.length) > 0 && (
           <div className="flex items-center gap-2">
             <Label className="text-xs text-muted-foreground">Filtrar Gerente</Label>
             <Select value={filtroGerente} onValueChange={setFiltroGerente}>
@@ -1538,8 +1560,33 @@ function FormDetail() {
             </Select>
           </div>
         )}
+        {(tipo === "contratacao" || tipo === "planejamento") && (peopleOpts.sups.length + peopleOpts.gers.length + gerentesDisponiveis.length) > 0 && (
+          <div className="relative ml-auto">
+            <button
+              type="button"
+              aria-expanded={filtrosContratacaoAbertos}
+              onClick={() => setFiltrosContratacaoAbertos((aberto) => !aberto)}
+              className="flex h-9 items-center gap-2 border border-[#39FF14]/40 bg-black/70 px-3 text-[10px] font-bold uppercase tracking-[0.22em] text-[#39FF14] transition hover:border-[#39FF14] hover:bg-[#39FF14]/10"
+            >
+              <span className="relative block h-4 w-6" aria-hidden>
+                <span className={`absolute top-1/2 h-[2px] w-3.5 bg-current transition duration-300 ${filtrosContratacaoAbertos ? "left-1/2 -translate-x-1/2 -translate-y-1/2 rotate-45" : "left-[22%] -translate-x-1/2 -translate-y-1/2 -rotate-[65deg]"}`} />
+                <span className={`absolute top-1/2 h-[2px] w-3.5 bg-current transition duration-300 ${filtrosContratacaoAbertos ? "left-1/2 -translate-x-1/2 -translate-y-1/2 -rotate-45" : "left-[78%] -translate-x-1/2 -translate-y-1/2 -rotate-[65deg]"}`} />
+              </span>
+              Filtro
+            </button>
+            <div className={`absolute right-0 top-[calc(100%+10px)] z-50 w-72 border border-[#39FF14]/35 bg-black/95 p-4 shadow-[0_0_35px_rgba(57,255,20,0.12)] backdrop-blur-2xl transition-all ${filtrosContratacaoAbertos ? "visible translate-y-0 opacity-100" : "invisible -translate-y-2 opacity-0"}`}>
+              <div className="mb-3 border-b border-[#39FF14]/20 pb-2 text-[9px] uppercase tracking-[0.25em] text-white/40">/ / FILTRAR LANÇAMENTOS</div>
+              <Select value={filtroGerente} onValueChange={(valor) => { setFiltroGerente(valor); setFiltrosContratacaoAbertos(false); }}>
+                <SelectTrigger className="w-full rounded-none border border-[#39FF14]/30 bg-black/70 text-[10px] uppercase tracking-widest text-gray-300"><SelectValue placeholder="RESPONSÁVEL" /></SelectTrigger>
+                <SelectContent className="rounded-none border border-[#39FF14]/30 bg-black/95 text-gray-300">
+                  {(peopleOpts.sups.length + peopleOpts.gers.length) > 0 ? <PessoaSelectContentItems opts={peopleOpts} includeTodos cyber /> : <><SelectItem value="todos">TODOS</SelectItem>{gerentesDisponiveis.map((gerenteItem) => <SelectItem key={gerenteItem} value={gerenteItem}>{gerenteItem.toUpperCase()}</SelectItem>)}</>}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        )}
         <Button
-          className="ml-auto rounded-none bg-transparent border border-[#39FF14] text-[#39FF14] hover:!bg-[#39FF14] hover:!text-black [&_svg]:hover:!text-black font-bold uppercase tracking-widest text-xs transition-colors duration-200"
+          className={`${tipo === "contratacao" || tipo === "planejamento" ? "" : "ml-auto"} rounded-none bg-transparent border border-[#39FF14] text-[#39FF14] hover:!bg-[#39FF14] hover:!text-black [&_svg]:hover:!text-black font-bold uppercase tracking-widest text-xs transition-colors duration-200`}
           onClick={openDialog}
           disabled={!canEditWrite || (tipo === "acelera_vendas" && planejamentoValidado)}
         >
@@ -1628,18 +1675,79 @@ function FormDetail() {
       )}
       {tipo === "contratacao" && (
         <div className="space-y-4">
-          <h2 className="text-2xl font-semibold text-emerald-500 uppercase tracking-[0.25em]">// Resumo</h2>
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="rounded-none border border-[#1e3a5f] bg-white/5 backdrop-blur-md p-4">
-              <div className="text-[10px] font-medium text-gray-400 uppercase tracking-widest">Candidatos</div>
-              <div className="mt-1 text-2xl font-bold text-gray-300">{lancsView.reduce((s, l) => s + (Number(l.candidatos) || 0), 0)}</div>
+          <div className="flex items-center justify-between border-b border-[#39FF14]/15 pb-3">
+            <h2 className="text-[10px] font-bold uppercase tracking-[0.28em] text-[#39FF14]">/ / RESUMO</h2>
+            <span className="text-[9px] uppercase tracking-[0.18em] text-white/40">{lancsView.length} {lancsView.length === 1 ? "lançamento" : "lançamentos"}</span>
+          </div>
+          <div className="grid gap-3 md:grid-cols-3">
+            <div className="rounded-none border border-white/10 bg-black/55 p-4 backdrop-blur-md">
+              <div className="text-[9px] font-medium text-gray-400 uppercase tracking-[0.2em]">Candidatos</div>
+              <div className="mt-1 font-mono text-xl font-bold text-white">{lancsView.reduce((s, l) => s + (Number(l.candidatos) || 0), 0)}</div>
             </div>
-            <div className="rounded-none border border-[#1e3a5f] bg-white/5 backdrop-blur-md p-4">
-              <div className="text-[10px] font-medium text-gray-400 uppercase tracking-widest">Contratados</div>
-              <div className="mt-1 text-2xl font-bold text-gray-300">{lancsView.reduce((s, l) => s + (Number(l.contratados) || 0), 0)}</div>
+            <div className="rounded-none border border-[#39FF14]/35 bg-[#39FF14]/[0.045] p-4 backdrop-blur-md">
+              <div className="text-[9px] font-medium text-[#39FF14]/70 uppercase tracking-[0.2em]">Contratados</div>
+              <div className="mt-1 font-mono text-xl font-bold text-[#39FF14]">{lancsView.reduce((s, l) => s + (Number(l.contratados) || 0), 0)}</div>
+            </div>
+            <div className="rounded-none border border-white/10 bg-black/55 p-4 backdrop-blur-md">
+              <div className="text-[9px] font-medium text-gray-400 uppercase tracking-[0.2em]">Conversão</div>
+              <div className="mt-1 font-mono text-xl font-bold text-white">
+                {(() => {
+                  const candidatosTotal = lancsView.reduce((s, l) => s + (Number(l.candidatos) || 0), 0);
+                  const contratadosTotal = lancsView.reduce((s, l) => s + (Number(l.contratados) || 0), 0);
+                  return `${(candidatosTotal > 0 ? (contratadosTotal / candidatosTotal) * 100 : 0).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`;
+                })()}
+              </div>
             </div>
           </div>
         </div>
+      )}
+      {tipo === "contratacao" && (
+        <section className="space-y-3">
+          <div className="flex items-center justify-between border-b border-[#39FF14]/15 pb-3">
+            <h2 className="text-[10px] font-bold uppercase tracking-[0.28em] text-[#39FF14]">/ / LANÇAMENTOS</h2>
+            <span className="text-[9px] uppercase tracking-[0.18em] text-white/40">{lancsView.length} registros</span>
+          </div>
+          {lancsView.length === 0 ? (
+            <div className="border border-dashed border-white/15 bg-black/45 py-10 text-center text-xs text-white/40">Nenhum lançamento ainda</div>
+          ) : (
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {lancsView.map((lancamento) => {
+                const candidatosLancamento = Number(lancamento.candidatos) || 0;
+                const contratadosLancamento = Number(lancamento.contratados) || 0;
+                const conversaoLancamento = candidatosLancamento > 0 ? (contratadosLancamento / candidatosLancamento) * 100 : 0;
+                const semanaLabel = lancamento.semana_inicio ? (() => {
+                  const [anoSemana, mesSemana, diaSemana] = lancamento.semana_inicio.split("-").map(Number);
+                  const inicioSemana = new Date(anoSemana, mesSemana - 1, diaSemana);
+                  const fimSemana = new Date(anoSemana, mesSemana - 1, diaSemana + 6);
+                  return `${fmtDate(inicioSemana.toISOString())} a ${fmtDate(fimSemana.toISOString())}`;
+                })() : "Sem semana";
+                return (
+                  <div key={lancamento.id} className="relative border border-[#39FF14]/25 bg-black/55 p-4 backdrop-blur-md transition hover:border-[#39FF14]/60">
+                    <div className="border-b border-white/10 pb-3 pr-8">
+                      <div className="text-[9px] uppercase tracking-[0.18em] text-white/35">Responsável</div>
+                      <h3 className="mt-1 text-sm font-bold uppercase tracking-wider text-[#39FF14]">{lancamento.gerente || "Sem responsável"}</h3>
+                      <div className="mt-1 text-[9px] uppercase tracking-[0.14em] text-white/35">{lancamento.fonte || "Sem fonte"} · {semanaLabel}</div>
+                    </div>
+                    <div className="mt-3 space-y-2 text-[10px] uppercase tracking-[0.14em]">
+                      <div className="flex items-center justify-between border border-white/10 p-2"><span className="text-white/45">Candidatos</span><span className="font-mono text-sm font-bold text-white">{candidatosLancamento}</span></div>
+                      <div className="flex items-center justify-between border border-white/10 p-2"><span className="text-white/45">Contratados</span><span className="font-mono text-sm font-bold text-white">{contratadosLancamento}</span></div>
+                      <div className="flex items-center justify-between border border-[#39FF14]/30 bg-[#39FF14]/[0.035] p-2"><span className="text-[#39FF14]/65">Conversão</span><span className="font-mono text-sm font-bold text-[#39FF14]">{conversaoLancamento.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%</span></div>
+                    </div>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <button type="button" disabled={!canEditWrite} aria-label="Excluir lançamento" className="absolute right-3 top-3 text-red-400/60 transition hover:text-red-400 disabled:cursor-not-allowed disabled:opacity-30"><Trash2 className="h-4 w-4" /></button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent className="verba-cyber rounded-none border border-red-500/40 bg-black/95 text-white">
+                        <AlertDialogHeader><AlertDialogTitle className="text-sm uppercase tracking-[0.2em] text-red-400">/ / EXCLUIR LANÇAMENTO?</AlertDialogTitle><AlertDialogDescription className="text-white/50">Esta ação não pode ser desfeita.</AlertDialogDescription></AlertDialogHeader>
+                        <AlertDialogFooter><AlertDialogCancel className="rounded-none border-white/20 bg-transparent text-white">Cancelar</AlertDialogCancel><AlertDialogAction onClick={() => deleteLancamento(lancamento.id)} className="rounded-none border border-red-500 bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-black">Excluir</AlertDialogAction></AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
       )}
       {tipo === "gastos_pessoais" && (
         (() => {
@@ -1680,6 +1788,84 @@ function FormDetail() {
         </div>
       )}
 
+      <div className="flex flex-col gap-6">
+      {tipo === "planejamento" && (() => {
+        const grupos = new Map<string, { metaGerente: number; metaSup: number; verbaCury: number; investimentosPessoais: number; acelera: number; verbaRow?: Lancamento }>();
+        lancsView.forEach((l) => {
+          const gerenteNome = l.gerente || "Sem gerente";
+          const grupo = grupos.get(gerenteNome) || { metaGerente: 0, metaSup: 0, verbaCury: 0, investimentosPessoais: 0, acelera: 0 };
+          const secao = l.secao || "principal";
+          if (secao === "principal") {
+            grupo.metaGerente += Number(l.meta_gerente || 0);
+            grupo.metaSup += Number(l.meta_sup || 0);
+          } else if (secao === "verba") {
+            grupo.verbaCury += Number(l.verba_cury || 0);
+            grupo.investimentosPessoais += Number(l.verba_gerente || 0) + Number(l.verba_superintendente || 0);
+            grupo.verbaRow ||= l;
+          } else if (secao === "acelera") {
+            grupo.acelera += Number(l.valor || 0);
+          }
+          grupos.set(gerenteNome, grupo);
+        });
+        const linhas = Array.from(grupos.entries()).sort(([a], [b]) => a.localeCompare(b, "pt-BR"));
+        const totais = linhas.reduce((acc, [, linha]) => {
+          acc.metaGerente += linha.metaGerente;
+          acc.metaSup += linha.metaSup;
+          acc.verbaCury += linha.verbaCury;
+          acc.investimentosPessoais += linha.investimentosPessoais;
+          acc.acelera += linha.acelera;
+          return acc;
+        }, { metaGerente: 0, metaSup: 0, verbaCury: 0, investimentosPessoais: 0, acelera: 0 });
+        const totalInvestimentoGeral = totais.verbaCury + totais.investimentosPessoais + totais.acelera;
+        return (
+          <section className="order-2 space-y-3">
+            <div className="flex items-center justify-between border-b border-[#39FF14]/15 pb-3">
+              <div><h2 className="text-sm font-bold uppercase tracking-[0.24em] text-[#39FF14]">/ / LANÇAMENTOS UNIFICADOS</h2><p className="mt-1 text-[9px] uppercase tracking-[0.16em] text-white/35">Metas, verbas e Acelera Vendas consolidados por gerente</p></div>
+              <span className="text-[9px] uppercase tracking-[0.18em] text-white/40">{linhas.length} {linhas.length === 1 ? "gerente" : "gerentes"}</span>
+            </div>
+            <div className="overflow-x-auto border border-[#39FF14]/25 bg-black/55 backdrop-blur-md">
+              <Table className="min-w-[1220px]">
+                <TableHeader><TableRow className="border-white/10 hover:bg-transparent">
+                  <TableHead className="text-[#39FF14]">Gerente</TableHead>
+                  <TableHead className="text-right text-[#39FF14]">Meta gerente</TableHead>
+                  <TableHead className="text-right text-[#39FF14]">Meta SUP</TableHead>
+                  <TableHead className="text-right text-[#39FF14]">Verba Cury</TableHead>
+                  <TableHead className="text-right text-[#39FF14]">Investimentos pessoais</TableHead>
+                  <TableHead className="text-right text-[#39FF14]">Acelera Vendas</TableHead>
+                  <TableHead className="text-right text-[#39FF14]">Total de investimento</TableHead>
+                  <TableHead className="text-right text-[#39FF14]">Custo por venda planejado</TableHead>
+                  <TableHead className="w-28 text-right text-[#39FF14]">Ações</TableHead>
+                </TableRow></TableHeader>
+                <TableBody>
+                  {linhas.length === 0 ? <TableRow><TableCell colSpan={9} className="py-10 text-center text-white/40">Nenhum lançamento ainda</TableCell></TableRow> : linhas.map(([gerenteNome, linha]) => {
+                    const totalInvestimento = linha.verbaCury + linha.investimentosPessoais + linha.acelera;
+                    const custoPlanejado = totalInvestimento > 0 ? linha.metaSup / totalInvestimento : 0;
+                    return <TableRow key={gerenteNome} className="border-white/10">
+                      <TableCell className="font-bold uppercase tracking-wide text-white">{gerenteNome}</TableCell>
+                      <TableCell className="text-right font-mono text-white">{linha.metaGerente.toLocaleString("pt-BR")}</TableCell>
+                      <TableCell className="text-right font-mono text-white">{linha.metaSup.toLocaleString("pt-BR")}</TableCell>
+                      <TableCell className="text-right font-mono text-white">{brl(linha.verbaCury)}</TableCell>
+                      <TableCell className="text-right font-mono text-white">{brl(linha.investimentosPessoais)}</TableCell>
+                      <TableCell className="text-right font-mono text-white">{brl(linha.acelera)}</TableCell>
+                      <TableCell className="text-right font-mono font-bold text-[#39FF14]">{brl(totalInvestimento)}</TableCell>
+                      <TableCell className="text-right font-mono text-white">{custoPlanejado.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 4 })}</TableCell>
+                      <TableCell><div className="flex justify-end gap-1">
+                        <Button variant="ghost" size="icon" disabled={!canEditWrite || gerenteNome === "Sem gerente"} onClick={() => openEditPlanGerente(gerenteNome)} title="Editar metas"><Pencil className="h-4 w-4" /></Button>
+                        <AlertDialog><AlertDialogTrigger asChild><Button variant="ghost" size="icon" className="text-red-400 hover:bg-red-500/10 hover:text-red-400" disabled={!canEditWrite || gerenteNome === "Sem gerente"}><Trash2 className="h-4 w-4" /></Button></AlertDialogTrigger>
+                          <AlertDialogContent className="rounded-none border border-red-500/40 bg-black/95 text-white backdrop-blur-xl"><AlertDialogHeader><AlertDialogTitle className="text-sm uppercase tracking-[0.2em] text-red-400">/ / EXCLUIR LANÇAMENTOS?</AlertDialogTitle><AlertDialogDescription className="text-xs text-white/50">Todos os lançamentos de {gerenteNome} neste planejamento serão removidos. Esta ação não pode ser desfeita.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel className="rounded-none border-white/20 bg-transparent text-white">Cancelar</AlertDialogCancel><AlertDialogAction className="rounded-none border border-red-500 bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-black" onClick={() => deletePlanejamentoGerente(gerenteNome)}>Excluir</AlertDialogAction></AlertDialogFooter></AlertDialogContent>
+                        </AlertDialog>
+                      </div></TableCell>
+                    </TableRow>;
+                  })}
+                  {linhas.length > 0 && <TableRow className="border-t border-[#39FF14]/30 bg-[#39FF14]/[0.035] font-bold"><TableCell className="text-[#39FF14]">TOTAL</TableCell><TableCell className="text-right font-mono text-white">{totais.metaGerente.toLocaleString("pt-BR")}</TableCell><TableCell className="text-right font-mono text-white">{totais.metaSup.toLocaleString("pt-BR")}</TableCell><TableCell className="text-right font-mono text-white">{brl(totais.verbaCury)}</TableCell><TableCell className="text-right font-mono text-white">{brl(totais.investimentosPessoais)}</TableCell><TableCell className="text-right font-mono text-white">{brl(totais.acelera)}</TableCell><TableCell className="text-right font-mono text-[#39FF14]">{brl(totalInvestimentoGeral)}</TableCell><TableCell className="text-right font-mono text-white">{(totalInvestimentoGeral > 0 ? totais.metaSup / totalInvestimentoGeral : 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 4 })}</TableCell><TableCell /></TableRow>}
+                </TableBody>
+              </Table>
+            </div>
+            <p className="text-right text-[8px] uppercase tracking-[0.14em] text-white/30">Custo por venda planejado = Meta SUP / Investimento total</p>
+          </section>
+        );
+      })()}
+
       {tipo === "planejamento" && (() => {
         const principal = lancsView.filter((l) => (l.secao || "principal") === "principal");
         const verba = lancsView.filter((l) => l.secao === "verba");
@@ -1701,14 +1887,11 @@ function FormDetail() {
         const qtdGerentesAce = new Set(acelera.map((l) => l.gerente).filter(Boolean)).size;
         const qtdSupAce = new Set(acelera.map((l) => l.superintendente).filter(Boolean)).size;
         return (
-          <div className="space-y-6">
+          <div className="order-1 space-y-6">
             {/* -- Metas -- */}
             <Card className="rounded-none border border-[#1e3a5f] bg-black/40 backdrop-blur-md">
               <CardHeader className="pb-3">
                 <div className="flex items-center gap-2">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-none border border-[#39FF14]/40 bg-black/60 text-[#39FF14]">
-                    <Target className="h-4 w-4" />
-                  </div>
                   <CardTitle className="text-sm font-semibold text-[#39FF14] uppercase tracking-[0.25em]">// RESUMO METAS</CardTitle>
                 </div>
               </CardHeader>
@@ -1716,28 +1899,24 @@ function FormDetail() {
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                   <div className="rounded-none border border-[#39FF14]/40 bg-black/60 backdrop-blur-md p-4">
                     <div className="flex items-center gap-2 text-[10px] font-medium text-[#39FF14] uppercase tracking-widest">
-                      <TrendingUp className="h-3.5 w-3.5" />
                       Total Meta Gerente
                     </div>
                     <div className="mt-1 text-2xl font-bold text-gray-300">{totMetaGer.toLocaleString("pt-BR")}</div>
                   </div>
                   <div className="rounded-none border border-[#39FF14]/40 bg-black/60 backdrop-blur-md p-4">
                     <div className="flex items-center gap-2 text-[10px] font-medium text-[#39FF14] uppercase tracking-widest">
-                      <TrendingUp className="h-3.5 w-3.5" />
                       Total Meta Sup.
                     </div>
                     <div className="mt-1 text-2xl font-bold text-gray-300">{totMetaSup.toLocaleString("pt-BR")}</div>
                   </div>
                   <div className="rounded-none border border-[#39FF14]/40 bg-black/60 backdrop-blur-md p-4">
                     <div className="flex items-center gap-2 text-[10px] font-medium text-[#39FF14] uppercase tracking-widest">
-                      <Users className="h-3.5 w-3.5" />
                       Gerentes
                     </div>
                     <div className="mt-1 text-2xl font-bold text-gray-300">{gerentes}</div>
                   </div>
                   <div className="rounded-none border border-[#39FF14]/40 bg-black/60 backdrop-blur-md p-4">
                     <div className="flex items-center gap-2 text-[10px] font-medium text-[#39FF14] uppercase tracking-widest">
-                      <BarChart3 className="h-3.5 w-3.5" />
                       Plantões
                     </div>
                     <div className="mt-1 text-2xl font-bold text-gray-300">{distinctPlantoes} <span className="text-base font-normal text-gray-400">de {totalPlantoes}</span></div>
@@ -1750,9 +1929,6 @@ function FormDetail() {
             <Card className="rounded-none border border-[#1e3a5f] bg-black/40 backdrop-blur-md">
               <CardHeader className="pb-3">
                 <div className="flex items-center gap-2">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-none border border-[#39FF14]/40 bg-black/60 text-[#39FF14]">
-                    <Wallet className="h-4 w-4" />
-                  </div>
                   <CardTitle className="text-sm font-semibold text-[#39FF14] uppercase tracking-[0.25em]">// RESUMO VERBAS</CardTitle>
                 </div>
               </CardHeader>
@@ -1760,28 +1936,24 @@ function FormDetail() {
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                   <div className="rounded-none border border-[#39FF14]/40 bg-black/60 backdrop-blur-md p-4">
                     <div className="flex items-center gap-2 text-[10px] font-medium text-[#39FF14] uppercase tracking-widest">
-                      <Wallet className="h-3.5 w-3.5" />
                       Verba Cury
                     </div>
                     <div className="mt-1 text-2xl font-bold text-gray-300">{brl(totVerbaCury)}</div>
                   </div>
                   <div className="rounded-none border border-[#39FF14]/40 bg-black/60 backdrop-blur-md p-4">
                     <div className="flex items-center gap-2 text-[10px] font-medium text-[#39FF14] uppercase tracking-widest">
-                      <Wallet className="h-3.5 w-3.5" />
                       Verba Gerente
                     </div>
                     <div className="mt-1 text-2xl font-bold text-gray-300">{brl(totVerbaGer)}</div>
                   </div>
                   <div className="rounded-none border border-[#39FF14]/40 bg-black/60 backdrop-blur-md p-4">
                     <div className="flex items-center gap-2 text-[10px] font-medium text-[#39FF14] uppercase tracking-widest">
-                      <Wallet className="h-3.5 w-3.5" />
                       Verba Sup.
                     </div>
                     <div className="mt-1 text-2xl font-bold text-gray-300">{brl(totVerbaSup)}</div>
                   </div>
                   <div className="rounded-none border border-[#39FF14]/40 bg-black/60 backdrop-blur-md p-4">
                     <div className="flex items-center gap-2 text-[10px] font-medium text-[#39FF14] uppercase tracking-widest">
-                      <BarChart3 className="h-3.5 w-3.5" />
                       Total Verba
                     </div>
                     <div className="mt-1 text-2xl font-bold text-gray-300">{brl(totVerbaCury + totVerbaGer + totVerbaSup)}</div>
@@ -1794,9 +1966,6 @@ function FormDetail() {
             <Card className="rounded-none border border-[#1e3a5f] bg-black/40 backdrop-blur-md">
               <CardHeader className="pb-3">
                 <div className="flex items-center gap-2">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-none border border-[#39FF14]/40 bg-black/60 text-[#39FF14]">
-                    <Zap className="h-4 w-4" />
-                  </div>
                   <CardTitle className="text-sm font-semibold text-[#39FF14] uppercase tracking-[0.25em]">// RESUMO ACELERA VENDAS</CardTitle>
                 </div>
               </CardHeader>
@@ -1804,35 +1973,30 @@ function FormDetail() {
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
                   <div className="rounded-none border border-[#39FF14]/40 bg-black/60 backdrop-blur-md p-4">
                     <div className="flex items-center gap-2 text-[10px] font-medium text-[#39FF14] uppercase tracking-widest">
-                      <Users className="h-3.5 w-3.5" />
                       Total Corretores
                     </div>
                     <div className="mt-1 text-2xl font-bold text-gray-300">{brl(totAceleraCor)}</div>
                   </div>
                   <div className="rounded-none border border-[#39FF14]/40 bg-black/60 backdrop-blur-md p-4">
                     <div className="flex items-center gap-2 text-[10px] font-medium text-[#39FF14] uppercase tracking-widest">
-                      <Wallet className="h-3.5 w-3.5" />
                       Total Gerente
                     </div>
                     <div className="mt-1 text-2xl font-bold text-gray-300">{brl(totAceleraGer)}</div>
                   </div>
                   <div className="rounded-none border border-[#39FF14]/40 bg-black/60 backdrop-blur-md p-4">
                     <div className="flex items-center gap-2 text-[10px] font-medium text-[#39FF14] uppercase tracking-widest">
-                      <TrendingUp className="h-3.5 w-3.5" />
                       Total Sup.
                     </div>
                     <div className="mt-1 text-2xl font-bold text-gray-300">{brl(totAceleraSup)}</div>
                   </div>
                   <div className="rounded-none border border-[#39FF14]/40 bg-black/60 backdrop-blur-md p-4">
                     <div className="flex items-center gap-2 text-[10px] font-medium text-[#39FF14] uppercase tracking-widest">
-                      <Target className="h-3.5 w-3.5" />
                       Total Diretor
                     </div>
                     <div className="mt-1 text-2xl font-bold text-gray-300">{brl(totAceleraDir)}</div>
                   </div>
                   <div className="rounded-none border border-[#39FF14]/40 bg-black/60 backdrop-blur-md p-4">
                     <div className="flex items-center gap-2 text-[10px] font-medium text-[#39FF14] uppercase tracking-widest">
-                      <Zap className="h-3.5 w-3.5" />
                       Total Investido
                     </div>
                     <div className="mt-1 text-2xl font-bold text-gray-300">{brl(totAceleraInv)}</div>
@@ -1906,9 +2070,10 @@ function FormDetail() {
           </div>
         );
       })()}
+      </div>
 
       <div className="flex items-center justify-between">
-        <h2 className={tipo === "gastos_pessoais" ? "text-[10px] font-bold text-[#39FF14] uppercase tracking-[0.25em]" : "text-lg font-semibold"}>LANÇAMENTOS</h2>
+        {tipo !== "contratacao" && tipo !== "planejamento" && <h2 className={tipo === "gastos_pessoais" ? "text-[10px] font-bold text-[#39FF14] uppercase tracking-[0.25em]" : "text-lg font-semibold"}>LANÇAMENTOS</h2>}
         <div className="flex flex-wrap gap-2">
           {isVerba && (
             <>
@@ -2320,12 +2485,15 @@ function FormDetail() {
                                 <TableCell>
                                   <Select
                                     value={r.valor}
-                                    onValueChange={(v) => setAceleraRows((rows) => rows.map((x, i) => (i === idx ? { ...x, valor: v as "5000" | "3000" } : x)))}
+                                    onValueChange={(v) => setAceleraRows((rows) => rows.map((x, i) => (i === idx ? { ...x, valor: v as AceleraPacote } : x)))}
                                   >
                                     <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
                                     <SelectContent>
-                                      <SelectItem value="5000">R$ 5.000</SelectItem>
-                                      <SelectItem value="3000">R$ 3.000</SelectItem>
+                                      <SelectItem value="2550">R$ 2.550</SelectItem>
+                                      <SelectItem value="5100">R$ 5.100</SelectItem>
+                                      <SelectItem value="8500">R$ 8.500</SelectItem>
+                                      <SelectItem value="13600">R$ 13.600</SelectItem>
+                                      <SelectItem value="17000">R$ 17.000</SelectItem>
                                     </SelectContent>
                                   </Select>
                                 </TableCell>
@@ -2502,7 +2670,7 @@ function FormDetail() {
         </CardContent>
       </Card>}
 
-      {tipo === "planejamento" && (() => {
+      {false && tipo === "planejamento" && (() => {
         const principal = lancsView.filter((l) => (l.secao || "principal") === "principal");
         const groups = new Map<string, { ger: number; sup: number; count: number }>();
         principal.forEach((l) => {
@@ -2548,7 +2716,7 @@ function FormDetail() {
         );
       })()}
 
-      {tipo === "planejamento" && (() => {
+      {false && tipo === "planejamento" && (() => {
         const principal = lancsView.filter((l) => (l.secao || "principal") === "principal");
         const verba = lancsView.filter((l) => l.secao === "verba");
         const acelera = lancsView.filter((l) => l.secao === "acelera");
@@ -2828,7 +2996,7 @@ function FormDetail() {
         );
       })()}
 
-      {(!isCyber || tipo === "gastos_pessoais" || tipo === "contratacao") && tipo !== "planejamento" && tipo !== "acelera_vendas" && (
+      {(!isCyber || tipo === "gastos_pessoais") && tipo !== "planejamento" && tipo !== "acelera_vendas" && (
         <>
         {tipo === "gastos_pessoais" && (() => {
           const groups = new Map<string, { total: number; count: number; gv: number; mn: number }>();

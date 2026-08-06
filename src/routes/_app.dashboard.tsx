@@ -60,7 +60,7 @@ const MESES = [
 ];
 
 function Dashboard() {
-  const { user, session, role, nome: nomeUsuario, canEdit, isAdmin, isDiretor, isRH, vinculadoId } = useAuth();
+  const { user, session, role, nome: nomeUsuario, cargo, canEdit, isAdmin, isDiretor, isRH, vinculadoId } = useAuth();
   const { setActiveFormType } = useActiveFormType();
   const [vinculadoNome, setVinculadoNome] = useState<string | null>(null);
   const navigate = useNavigate();
@@ -69,7 +69,21 @@ function Dashboard() {
   const [usuarios, setUsuarios] = useState<Array<{ id: string; nome: string }>>([]);
   const [disponivelMap, setDisponivelMap] = useState<Record<string, number>>({});
   const [gerentesMap, setGerentesMap] = useState<Record<string, string[]>>({});
-  const [planMap, setPlanMap] = useState<Record<string, { sup: string | null; metaSup: number; verbaTotal: number; corretoresAcelera: number }>>({});
+  const [planMap, setPlanMap] = useState<Record<string, {
+    sup: string | null;
+    metaSup: number;
+    verbaTotal: number;
+    corretoresAcelera: number;
+    investimentoEquipe: number;
+    aceleraPlanejado: number;
+    gerentesAcelera: string[];
+    supsAcelera: string[];
+    pacotes: Record<string, number>;
+    metasGerentes: Record<string, number>;
+    verbasGerentes: Record<string, number>;
+    aceleraValores: { corretores: number; gerentes: number; sups: number; total: number };
+    plantoes: Array<{ plantao: string; sup: string; planejado: number }>;
+  }>>({});
   const [gastosMap, setGastosMap] = useState<Record<string, { gv: number; mn: number; total: number }>>({});
   const [gastosPorTipoMap, setGastosPorTipoMap] = useState<Record<string, Record<string, { gv: number; mn: number; total: number }>>>({});
   const [contratacaoMap, setContratacaoMap] = useState<Record<string, { candidatos: number; contratados: number; total: number }>>({});
@@ -84,7 +98,7 @@ function Dashboard() {
   const [filtroDestinacaoGasto, setFiltroDestinacaoGasto] = useState<"todos" | "gerar_venda" | "manutencao">("todos");
   const [filtrosAbertos, setFiltrosAbertos] = useState(false);
   const filtrosRef = useRef<HTMLDivElement>(null);
-  const { diretores, supsByDiretorNome, gerentesByDiretorSup, superintendentes } = useHierarquia();
+  const { diretores, supsByDiretorNome, gerentesBySupNome, gerentesByDiretorSup, superintendentes } = useHierarquia();
   const tipo = tipoAtivo;
   const cyberAtivo = tipoAtivo === "verba_cury" || tipoAtivo === "planejamento" || tipoAtivo === "gastos_pessoais" || tipoAtivo === "contratacao";
   const cyberTipo = tipo === "verba_cury" || tipo === "planejamento" || tipo === "gastos_pessoais" || tipo === "contratacao";
@@ -124,11 +138,11 @@ function Dashboard() {
     if (ids.length) {
       const { data: ls } = await supabase
         .from("lancamentos")
-        .select("formulario_id,valor,reprovado,gerente,superintendente,meta_sup,verba_cury,verba_gerente,verba_superintendente,meta_gerente,secao,nome_recebedor,destinacao,tipo_gasto,candidatos,contratados")
+        .select("formulario_id,valor,reprovado,gerente,superintendente,meta_sup,verba_cury,verba_gerente,verba_superintendente,meta_gerente,secao,nome_recebedor,plantao,destinacao,tipo_gasto,candidatos,contratados")
         .in("formulario_id", ids);
       const used: Record<string, number> = {};
       const gMap: Record<string, Set<string>> = {};
-      const planAgg: Record<string, { sup: string | null; metaSup: number; verbaTotal: number; corretores: Set<string>; aceleraCount: number }> = {};
+      const planAgg: Record<string, { sup: string | null; metaSup: number; verbaTotal: number; investimentoEquipe: number; aceleraPlanejado: number; corretores: Set<string>; gerentes: Set<string>; sups: Set<string>; pacotes: Record<string, number>; metasGerentes: Record<string, number>; verbasGerentes: Record<string, number>; aceleraValores: { corretores: number; gerentes: number; sups: number; total: number }; plantoes: Array<{ plantao: string; sup: string; planejado: number }> }> = {};
       const planIds = new Set(list.filter((f) => f.tipo === "planejamento").map((f) => f.id));
       const gastosIds = new Set(list.filter((f) => f.tipo === "gastos_pessoais").map((f) => f.id));
       const gastosAgg: Record<string, { gv: number; mn: number; total: number }> = {};
@@ -162,18 +176,31 @@ function Dashboard() {
           cur.total += c + ct;
         }
         if (planIds.has(l.formulario_id)) {
-          const cur = (planAgg[l.formulario_id] ||= { sup: null, metaSup: 0, verbaTotal: 0, corretores: new Set<string>(), aceleraCount: 0 });
+          const cur = (planAgg[l.formulario_id] ||= { sup: null, metaSup: 0, verbaTotal: 0, investimentoEquipe: 0, aceleraPlanejado: 0, corretores: new Set<string>(), gerentes: new Set<string>(), sups: new Set<string>(), pacotes: {}, metasGerentes: {}, verbasGerentes: {}, aceleraValores: { corretores: 0, gerentes: 0, sups: 0, total: 0 }, plantoes: [] });
           if (!cur.sup && l.superintendente) cur.sup = l.superintendente;
           const sec = l.secao || "principal";
           if (sec === "principal") {
             cur.metaSup += Number(l.meta_sup || 0);
+            if (l.gerente) cur.metasGerentes[l.gerente] = (cur.metasGerentes[l.gerente] || 0) + Number(l.meta_gerente || 0);
+            if (l.plantao) cur.plantoes.push({ plantao: l.plantao, sup: l.superintendente || cur.sup || "Sem superintendente", planejado: Number(l.meta_sup || 0) });
           }
           if (sec === "verba") {
-            cur.verbaTotal += Number(l.verba_cury || 0) + Number(l.verba_gerente || 0) + Number(l.verba_superintendente || 0);
+            const verbaLinha = Number(l.verba_cury || 0) + Number(l.verba_gerente || 0) + Number(l.verba_superintendente || 0);
+            cur.verbaTotal += verbaLinha;
+            cur.investimentoEquipe += verbaLinha;
+            if (l.gerente) cur.verbasGerentes[l.gerente] = (cur.verbasGerentes[l.gerente] || 0) + verbaLinha;
           }
           if (sec === "acelera") {
-            cur.aceleraCount += 1;
             if (l.nome_recebedor) cur.corretores.add(l.nome_recebedor);
+            if (l.gerente) cur.gerentes.add(l.gerente);
+            if (l.superintendente) cur.sups.add(l.superintendente);
+            cur.aceleraPlanejado += Number(l.valor || 0);
+            cur.aceleraValores.corretores += Number(l.verba_cury || 0);
+            cur.aceleraValores.gerentes += Number(l.verba_gerente || 0);
+            cur.aceleraValores.sups += Number(l.verba_superintendente || 0);
+            cur.aceleraValores.total += Number(l.valor || 0);
+            const pacote = String(Number(l.valor || 0));
+            if (["2550", "5100", "8500", "13600", "17000"].includes(pacote)) cur.pacotes[pacote] = (cur.pacotes[pacote] || 0) + 1;
           }
         }
       });
@@ -186,9 +213,9 @@ function Dashboard() {
       const gOut: Record<string, string[]> = {};
       Object.entries(gMap).forEach(([k, v]) => { gOut[k] = Array.from(v); });
       setGerentesMap(gOut);
-      const pOut: Record<string, { sup: string | null; metaSup: number; verbaTotal: number; corretoresAcelera: number }> = {};
+      const pOut: typeof planMap = {};
       Object.entries(planAgg).forEach(([k, v]) => {
-        pOut[k] = { sup: v.sup, metaSup: v.metaSup, verbaTotal: v.verbaTotal, corretoresAcelera: v.corretores.size || v.aceleraCount };
+        pOut[k] = { sup: v.sup, metaSup: v.metaSup, verbaTotal: v.verbaTotal, corretoresAcelera: v.corretores.size, investimentoEquipe: v.investimentoEquipe, aceleraPlanejado: v.aceleraPlanejado, gerentesAcelera: Array.from(v.gerentes), supsAcelera: Array.from(v.sups), pacotes: v.pacotes, metasGerentes: v.metasGerentes, verbasGerentes: v.verbasGerentes, aceleraValores: v.aceleraValores, plantoes: v.plantoes };
       });
       setPlanMap(pOut);
       setGastosMap(gastosAgg);
@@ -316,6 +343,136 @@ function Dashboard() {
       },
       { gerarVenda: 0, manutencao: 0, total: 0, quantidade: 0 },
     );
+  const categoriasGastosValidadas = Object.entries(
+    formsFiltrados
+      .filter((formulario) => (formulario.status || "editando") === "validado")
+      .reduce((categorias, formulario) => {
+        Object.entries(gastosPorTipoMap[formulario.id] || {}).forEach(([categoria, valores]) => {
+          if (filtroTipoGasto !== "todos" && categoria !== filtroTipoGasto) return;
+          const valor = filtroDestinacaoGasto === "gerar_venda" ? valores.gv : filtroDestinacaoGasto === "manutencao" ? valores.mn : valores.total;
+          categorias[categoria] = (categorias[categoria] || 0) + valor;
+        });
+        return categorias;
+      }, {} as Record<string, number>),
+  ).filter(([, valor]) => valor > 0).sort((a, b) => b[1] - a[1]);
+
+  const resumoContratacaoValidado = formsFiltrados
+    .filter((formulario) => (formulario.status || "editando") === "validado")
+    .reduce(
+      (acumulado, formulario) => {
+        const contratacao = contratacaoMap[formulario.id] || { candidatos: 0, contratados: 0, total: 0 };
+        acumulado.candidatos += contratacao.candidatos;
+        acumulado.contratados += contratacao.contratados;
+        if (formulario.diretor) acumulado.diretorias.add(formulario.diretor);
+        acumulado.quantidade += 1;
+        return acumulado;
+      },
+      { candidatos: 0, contratados: 0, diretorias: new Set<string>(), quantidade: 0 },
+    );
+
+  const resumoPlanejamentoValidado = formsFiltrados
+    .filter((formulario) => (formulario.status || "editando") === "validado")
+    .reduce(
+      (resumo, formulario) => {
+        const plano = planMap[formulario.id];
+        if (!plano) return resumo;
+        resumo.metaPlanejada += plano.metaSup;
+        resumo.verbaPlanejada += plano.verbaTotal;
+        resumo.investimentoEquipe += plano.investimentoEquipe;
+        resumo.aceleraPlanejado += plano.aceleraPlanejado;
+        resumo.corretores += plano.corretoresAcelera;
+        plano.gerentesAcelera.forEach((nome) => resumo.gerentes.add(nome));
+        plano.supsAcelera.forEach((nome) => resumo.sups.add(nome));
+        resumo.valoresAcelera.corretores += plano.aceleraValores.corretores;
+        resumo.valoresAcelera.gerentes += plano.aceleraValores.gerentes;
+        resumo.valoresAcelera.sups += plano.aceleraValores.sups;
+        resumo.valoresAcelera.total += plano.aceleraValores.total;
+        Object.entries(plano.pacotes).forEach(([pacote, quantidade]) => { resumo.pacotes[pacote] = (resumo.pacotes[pacote] || 0) + quantidade; });
+        plano.plantoes.forEach((linha) => {
+          const plantao = resumo.plantoes.get(linha.plantao) || new Map<string, number>();
+          plantao.set(linha.sup, (plantao.get(linha.sup) || 0) + linha.planejado);
+          resumo.plantoes.set(linha.plantao, plantao);
+        });
+        resumo.quantidade += 1;
+        return resumo;
+      },
+      {
+        metaPlanejada: 0,
+        metaRealizada: 0,
+        verbaPlanejada: 0,
+        verbaRealizada: 0,
+        investimentoEquipe: 0,
+        aceleraPlanejado: 0,
+        aceleraRealizado: 0,
+        corretores: 0,
+        gerentes: new Set<string>(),
+        sups: new Set<string>(),
+        valoresAcelera: { corretores: 0, gerentes: 0, sups: 0, total: 0 },
+        pacotes: {} as Record<string, number>,
+        plantoes: new Map<string, Map<string, number>>(),
+        quantidade: 0,
+      },
+    );
+
+  const normalizaNome = (valor: string) => valor.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+  const usuarioSuperintendente = cargo === "superintendente";
+  const diretorVisivel = isDiretor ? (nomeUsuario || "todos") : filtroDiretor;
+  const supersDaDiretoria = supsByDiretorNome(diretorVisivel).filter((sup) => !normalizaNome(sup.nome).includes("PROCESSOS INTERNOS"));
+  const supAtual = superintendentes.find((sup) => sup.id === (vinculadoId || user?.id) || normalizaNome(sup.nome) === normalizaNome(nomeUsuario || ""));
+  const entidadesPlanejamento = (usuarioSuperintendente && supAtual ? gerentesBySupNome(supAtual.nome) : supersDaDiretoria).map((pessoa) => {
+    const chave = normalizaNome(pessoa.nome);
+    const formularioPertence = (formulario: Form) => {
+      const plano = planMap[formulario.id];
+      if (usuarioSuperintendente) return Object.keys(plano?.metasGerentes || {}).some((gerente) => normalizaNome(gerente) === chave);
+      return normalizaNome(plano?.sup || formulario.superintendente || formulario.nome || "").includes(chave);
+    };
+    const formularios = formsFiltrados.filter(formularioPertence);
+    const formulariosValidados = formularios.filter((formulario) => (formulario.status || "editando") === "validado");
+    const planejado = formulariosValidados.reduce((total, formulario) => {
+        const plano = planMap[formulario.id];
+        if (usuarioSuperintendente) {
+          return total + Object.entries(plano?.metasGerentes || {}).reduce((soma, [gerente, meta]) => normalizaNome(gerente) === chave ? soma + meta : soma, 0);
+        }
+        const responsavel = normalizaNome(plano?.sup || formulario.superintendente || formulario.nome || "");
+        return responsavel.includes(chave) ? total + (plano?.metaSup || 0) : total;
+      }, 0);
+    const verbaPlanejada = formulariosValidados.reduce((total, formulario) => {
+      const plano = planMap[formulario.id];
+      if (!usuarioSuperintendente) return total + (plano?.verbaTotal || 0);
+      return total + Object.entries(plano?.verbasGerentes || {}).reduce((soma, [gerente, verba]) => normalizaNome(gerente) === chave ? soma + verba : soma, 0);
+    }, 0);
+    const realizado = 0;
+    return { nome: pessoa.nome, planejado, realizado, percentual: planejado > 0 ? (realizado / planejado) * 100 : 0, verbaPlanejada, quantidadeValidada: formulariosValidados.length, formularios };
+  });
+  const supersVisiveisVerba = usuarioSuperintendente && supAtual ? [supAtual] : supersDaDiretoria;
+  const entidadesVerbaCury = supersVisiveisVerba.map((sup) => {
+    const chave = normalizaNome(sup.nome);
+    const formularios = formsFiltrados.filter((formulario) => {
+      const responsavel = normalizaNome(formulario.superintendente || formulario.nome || usuarios.find((usuario) => usuario.id === formulario.usuario_id)?.nome || "");
+      return formulario.usuario_id === sup.id || responsavel.includes(chave);
+    });
+    const formulariosValidados = formularios.filter((formulario) => (formulario.status || "editando") === "validado");
+    const totalMeses = new Set(formulariosValidados.map((formulario) => `${formulario.ano_referencia || 0}-${formulario.mes_referencia || 0}`)).size;
+    const totalVerba = formulariosValidados.reduce((total, formulario) => total + Number(formulario.valor_agilitas || 0) + Number(formulario.valor_marketing || 0), 0);
+    return { nome: sup.nome, formularios, totalMeses, totalVerba, mediaMensal: totalMeses > 0 ? totalVerba / totalMeses : 0 };
+  });
+  const entidadesGastosPessoais = supersVisiveisVerba.map((sup) => {
+    const chave = normalizaNome(sup.nome);
+    const formularios = formsFiltrados.filter((formulario) => {
+      const responsavel = normalizaNome(formulario.superintendente || formulario.responsavel || formulario.nome || usuarios.find((usuario) => usuario.id === formulario.usuario_id)?.nome || "");
+      return formulario.usuario_id === sup.id || responsavel.includes(chave);
+    });
+    const formulariosValidados = formularios.filter((formulario) => (formulario.status || "editando") === "validado");
+    const totais = formulariosValidados.reduce((acc, formulario) => {
+      const gastos = gastosDoFormulario(formulario.id);
+      acc.gerarVenda += gastos.gv;
+      acc.manutencao += gastos.mn;
+      acc.total += gastos.total;
+      return acc;
+    }, { gerarVenda: 0, manutencao: 0, total: 0 });
+    const totalMeses = new Set(formulariosValidados.map((formulario) => `${formulario.ano_referencia || 0}-${formulario.mes_referencia || 0}`)).size;
+    return { nome: sup.nome, formularios, ...totais, mediaMensal: totalMeses > 0 ? totais.total / totalMeses : 0 };
+  });
 
   const verbasPorResponsavel = Array.from(
     formsFiltrados.reduce((grupos, formulario) => {
@@ -343,6 +500,10 @@ function Dashboard() {
     const isGastos = tipo === "gastos_pessoais";
     const isMeta = tipo === "meta";
     const isAcelera = tipo === "acelera_vendas";
+    if (isContratacao && !diretor) {
+      setBusy(false);
+      return toast.error("Selecione a diretoria.");
+    }
     // Admin pode criar formulários em nome de qualquer usuário (sup/gerente/etc)
     const adminTarget = isAdmin && nome ? usuarios.find((u) => u.nome === nome) : null;
     const effectiveOwnerId = adminTarget
@@ -386,7 +547,7 @@ function Dashboard() {
       tipo,
       tipo_verba: isVerba ? tipoVerba : "cury",
       nome: nomeFinal || null,
-      diretor: null,
+      diretor: isContratacao ? (diretor || null) : null,
       superintendente: isAcelera ? (superintendente || null) : null,
       responsavel: isGastos
         ? (responsavel || effectiveOwnerNome || null)
@@ -536,7 +697,7 @@ function Dashboard() {
               )}
               {tipo === "verba_cury" || tipo === "contratacao" || (isAdmin && (tipo === "gastos_pessoais" || tipo === "planejamento")) ? (
                 <div>
-                  <Label className="text-gray-400 uppercase tracking-widest text-[10px]">Quem vai prestar conta</Label>
+                  <Label className="text-gray-400 uppercase tracking-widest text-[10px]">{tipo === "contratacao" ? "Responsável" : "Quem vai prestar conta"}</Label>
                   <Select value={nome || (isRH ? (vinculadoNome || "") : (nomeUsuario || ""))} onValueChange={setNome} disabled={!isAdmin}>
                     <SelectTrigger className="rounded-none border border-[#39FF14]/30 bg-black/60 backdrop-blur-md text-gray-400 hover:border-[#39FF14] focus:border-[#39FF14] focus:ring-0 uppercase tracking-widest text-[10px]"><SelectValue placeholder="SELECIONE UM USUÁRIO..." /></SelectTrigger>
                     <SelectContent className="rounded-none border border-[#39FF14]/30 bg-black/80 backdrop-blur-md text-gray-300">
@@ -555,6 +716,17 @@ function Dashboard() {
                 <div>
                   <Label>{tipo === "meta" ? "Identificação (opcional)" : "Nome / Identificação"}</Label>
                   <Input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Ex: Orçamento equipe SP" required={tipo !== "meta"} />
+                </div>
+              )}
+              {tipo === "contratacao" && (
+                <div>
+                  <Label className="text-gray-400 uppercase tracking-widest text-[10px]">Diretoria</Label>
+                  <Select value={diretor} onValueChange={setDiretor}>
+                    <SelectTrigger className="rounded-none border border-[#39FF14]/30 bg-black/60 backdrop-blur-md text-gray-400 hover:border-[#39FF14] focus:border-[#39FF14] focus:ring-0 uppercase tracking-widest text-[10px]"><SelectValue placeholder="SELECIONE A DIRETORIA..." /></SelectTrigger>
+                    <SelectContent className="rounded-none border border-[#39FF14]/30 bg-black/90 backdrop-blur-xl text-gray-300">
+                      {diretores.map((item) => <SelectItem key={item.id} value={item.nome} className="rounded-none uppercase tracking-widest text-[10px] focus:bg-[#39FF14]/10 focus:text-[#39FF14]">{item.nome.toUpperCase()}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
                 </div>
               )}
               {tipo === "verba_cury" && (
@@ -630,6 +802,101 @@ function Dashboard() {
         </div>
       </div>
 
+      {tipoAtivo === "planejamento" && (
+        <section className="relative z-10 border border-[#39FF14]/25 bg-black/55 p-4 backdrop-blur-md">
+          <div className="mb-3 flex items-center justify-between border-b border-[#39FF14]/15 pb-3">
+            <h2 className="text-[10px] font-bold uppercase tracking-[0.28em] text-[#39FF14]">/ / RESUMO VALIDADO</h2>
+            <span className="text-[9px] uppercase tracking-[0.2em] text-white/40">
+              {resumoPlanejamentoValidado.quantidade} {resumoPlanejamentoValidado.quantidade === 1 ? "registro" : "registros"}
+            </span>
+          </div>
+          <div className="grid gap-3 lg:grid-cols-2">
+            <div className="grid gap-3">
+              <div className="border border-white/10 bg-white/[0.025] p-4">
+                <h3 className="mb-3 text-[10px] font-bold uppercase tracking-[0.24em] text-[#39FF14]">Planejamento geral</h3>
+                <div className="grid grid-cols-3 gap-3">
+                  <div><div className="text-[11px] uppercase tracking-[0.18em] text-white/40">Planejado</div><div className="mt-1 font-mono text-xl font-bold text-white">{resumoPlanejamentoValidado.metaPlanejada.toLocaleString("pt-BR")}</div></div>
+                  <div><div className="text-[11px] uppercase tracking-[0.18em] text-white/40">Realizado</div><div className="mt-1 font-mono text-xl font-bold text-white/55">{resumoPlanejamentoValidado.metaRealizada.toLocaleString("pt-BR")}</div></div>
+                  <div><div className="text-[11px] uppercase tracking-[0.18em] text-white/40">% realizado</div><div className="mt-1 font-mono text-xl font-bold text-[#39FF14]">{(resumoPlanejamentoValidado.metaPlanejada > 0 ? (resumoPlanejamentoValidado.metaRealizada / resumoPlanejamentoValidado.metaPlanejada) * 100 : 0).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%</div></div>
+                </div>
+                <div className="mt-4 border-t border-white/10 pt-3">
+                  <div className="text-[11px] uppercase tracking-[0.2em] text-[#39FF14]/65">Total de verba</div>
+                  <div className="mt-2 flex flex-wrap items-center gap-x-6 gap-y-2 text-xs">
+                    <div className="flex items-center gap-2 text-white/50"><span>Planejada</span><strong className="font-mono text-white">{brl(resumoPlanejamentoValidado.verbaPlanejada)}</strong></div>
+                    <div className="flex items-center gap-2 text-white/50"><span>Realizada</span><strong className="font-mono text-white/55">{brl(resumoPlanejamentoValidado.verbaRealizada)}</strong></div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="border border-white/10 bg-white/[0.025] p-4">
+                <h3 className="mb-3 text-[10px] font-bold uppercase tracking-[0.24em] text-[#39FF14]">Verba</h3>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <div><div className="text-[11px] uppercase tracking-[0.18em] text-white/40">Investimento equipe</div><div className="mt-1 font-mono text-base font-bold text-white">{brl(resumoPlanejamentoValidado.investimentoEquipe)}</div></div>
+                  <div><div className="text-[11px] uppercase tracking-[0.18em] text-white/40">Acelera planejado</div><div className="mt-1 font-mono text-base font-bold text-white">{brl(resumoPlanejamentoValidado.aceleraPlanejado)}</div></div>
+                  <div><div className="text-[11px] uppercase tracking-[0.18em] text-white/40">Acelera realizado</div><div className="mt-1 font-mono text-base font-bold text-white/55">{brl(resumoPlanejamentoValidado.aceleraRealizado)}</div></div>
+                </div>
+              </div>
+
+              <div className="border border-[#39FF14]/30 bg-[#39FF14]/[0.035] p-4">
+                <h3 className="mb-3 text-[10px] font-bold uppercase tracking-[0.24em] text-[#39FF14]">Acelera Vendas</h3>
+                <div className="grid gap-3 border-b border-white/10 pb-3 sm:grid-cols-2 xl:grid-cols-4">
+                  {[
+                    ["Corretores", resumoPlanejamentoValidado.corretores, resumoPlanejamentoValidado.valoresAcelera.corretores],
+                    ["Gerentes", resumoPlanejamentoValidado.gerentes.size, resumoPlanejamentoValidado.valoresAcelera.gerentes],
+                    ["SUPs", resumoPlanejamentoValidado.sups.size, resumoPlanejamentoValidado.valoresAcelera.sups],
+                    ["Total", resumoPlanejamentoValidado.corretores + resumoPlanejamentoValidado.gerentes.size + resumoPlanejamentoValidado.sups.size, resumoPlanejamentoValidado.valoresAcelera.total],
+                  ].map(([rotulo, participantes, valor]) => <div key={rotulo as string} className="border border-white/10 bg-black/25 p-3"><div className="text-[11px] font-bold uppercase tracking-[0.16em] text-white/55">{rotulo}</div><div className="mt-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/40">Participantes</div><div className="mt-1 font-mono text-lg font-bold text-[#39FF14]">{participantes}<span className="mx-1 text-white/25">/</span><span className="text-white/50">0</span></div><div className="mt-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/40">Valor</div><div className="mt-1 font-mono text-sm font-bold text-white">{brl(Number(valor))}<span className="mx-1 text-white/25">/</span><span className="text-white/50">{brl(0)}</span></div></div>)}
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-5">
+                  {[
+                    ["Pacote 2.550", resumoPlanejamentoValidado.pacotes["2550"] || 0],
+                    ["Pacote 5.100", resumoPlanejamentoValidado.pacotes["5100"] || 0],
+                    ["Pacote 8.500", resumoPlanejamentoValidado.pacotes["8500"] || 0],
+                    ["Pacote 13.600", resumoPlanejamentoValidado.pacotes["13600"] || 0],
+                    ["Pacote 17.000", resumoPlanejamentoValidado.pacotes["17000"] || 0],
+                  ].map(([rotulo, valor]) => <div key={rotulo as string}><div className="text-[10px] uppercase tracking-[0.16em] text-white/45">{rotulo}</div><div className="mt-1 font-mono text-lg font-bold text-[#39FF14]">{valor}</div></div>)}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex min-h-full flex-col border border-white/10 bg-white/[0.025] p-4">
+              <h3 className="mb-3 text-[10px] font-bold uppercase tracking-[0.24em] text-[#39FF14]">Plantão</h3>
+              <div className="flex-1 space-y-3">
+                {resumoPlanejamentoValidado.plantoes.size === 0 ? (
+                  <div className="border border-dashed border-white/10 p-6 text-center text-[10px] uppercase tracking-widest text-white/35">Nenhum plantão validado</div>
+                ) : Array.from(resumoPlanejamentoValidado.plantoes.entries()).sort(([a], [b]) => a.localeCompare(b, "pt-BR")).map(([plantao, sups]) => {
+                  const totalPlantao = Array.from(sups.values()).reduce((total, valor) => total + valor, 0);
+                  return <div key={plantao} className="border border-white/10 bg-black/30">
+                    <div className="flex items-center justify-between border-b border-white/10 px-3 py-2"><strong className="text-[10px] uppercase tracking-[0.18em] text-white">{plantao}</strong><span className="font-mono text-xs font-bold text-[#39FF14]">{totalPlantao.toLocaleString("pt-BR")}</span></div>
+                    <div className="divide-y divide-white/[0.06]">{Array.from(sups.entries()).sort(([a], [b]) => a.localeCompare(b, "pt-BR")).map(([sup, planejado]) => <div key={sup} className="flex items-center justify-between px-3 py-2 text-[10px]"><span className="uppercase tracking-[0.12em] text-white/55">{sup}</span><span className="font-mono text-white"><span className="mr-2 text-[8px] uppercase text-white/30">Planejado</span>{planejado.toLocaleString("pt-BR")}</span></div>)}</div>
+                  </div>;
+                })}
+              </div>
+              <div className="mt-3 flex items-center justify-between border-t border-[#39FF14]/25 pt-3 text-[10px] font-bold uppercase tracking-[0.18em] text-[#39FF14]"><span>Total</span><span className="font-mono text-base">{resumoPlanejamentoValidado.metaPlanejada.toLocaleString("pt-BR")}</span></div>
+            </div>
+          </div>
+          <div className="mt-4 border-t border-[#39FF14]/20 pt-4">
+            <div className="mb-3 flex items-center justify-between"><h3 className="text-sm font-bold uppercase tracking-[0.24em] text-[#39FF14]">{usuarioSuperintendente ? "Gerentes" : "Superintendentes"}</h3><span className="text-[8px] uppercase tracking-[0.16em] text-white/30">Realizado aguardando Google Sheets</span></div>
+            <div className={usuarioSuperintendente ? "flex gap-3 overflow-x-auto pb-2" : "grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6"}>
+              {entidadesPlanejamento.map((sup) => (
+                <button key={sup.nome} type="button" disabled={sup.formularios.length === 0} onClick={() => setResponsavelSelecionado({ nome: sup.nome, formularios: sup.formularios })} className={`${usuarioSuperintendente ? "w-[190px] shrink-0" : "w-full min-w-0"} border border-white/10 bg-white/[0.025] p-3 text-left transition hover:border-[#39FF14]/70 hover:bg-[#39FF14]/[0.035] disabled:cursor-default disabled:opacity-55 disabled:hover:border-white/10 disabled:hover:bg-white/[0.025]`}>
+                  <div className="truncate border-b border-white/10 pb-2 text-xs font-bold uppercase tracking-[0.18em] text-[#39FF14]" title={sup.nome}>{sup.nome}</div>
+                  <div className="mt-3 space-y-2 text-[10px] uppercase tracking-[0.12em]">
+                    <div className="flex items-center justify-between gap-2"><span className="text-white/45">Planejado</span><strong className="font-mono text-white">{sup.quantidadeValidada}</strong></div>
+                    <div className="flex items-center justify-between gap-2"><span className="text-white/45">Realizado</span><strong className="font-mono text-white/55">{sup.realizado.toLocaleString("pt-BR")}</strong></div>
+                    <div className="flex items-center justify-between gap-2"><span className="text-white/45">% realizado</span><strong className="font-mono text-[#39FF14]">{sup.percentual.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%</strong></div>
+                    <div className="flex items-center justify-between gap-2 border-t border-white/10 pt-2"><span className="text-white/45">Verba planejada</span><strong className="font-mono text-white">{brl(sup.verbaPlanejada)}</strong></div>
+                  </div>
+                  <div className="mt-2 text-[7px] uppercase tracking-[0.12em] text-white/25">{sup.formularios.length > 0 ? "Clique para escolher o mês" : "Sem planejamento"}</div>
+                </button>
+              ))}
+              {entidadesPlanejamento.length === 0 && <div className="w-full border border-dashed border-white/10 p-6 text-center text-[10px] uppercase tracking-widest text-white/35">Nenhum {usuarioSuperintendente ? "gerente" : "superintendente"} vinculado</div>}
+            </div>
+          </div>
+          <p className="mt-3 text-right text-[8px] uppercase tracking-[0.16em] text-white/25">Valores realizados aguardam integração com Google Sheets</p>
+        </section>
+      )}
+
       {tipoAtivo === "verba_cury" && (
         <section className="relative z-10 border border-[#39FF14]/25 bg-black/55 p-4 backdrop-blur-md">
           <div className="mb-3 flex items-center justify-between border-b border-[#39FF14]/15 pb-3">
@@ -665,24 +932,56 @@ function Dashboard() {
               {resumoGastosValidado.quantidade} {resumoGastosValidado.quantidade === 1 ? "registro" : "registros"}
             </span>
           </div>
-          <div className="grid gap-3 md:grid-cols-3">
-            <div className="border border-white/10 bg-white/[0.025] p-3">
-              <div className="text-[9px] uppercase tracking-[0.22em] text-white/45">Total Gerar Venda</div>
-              <div className="mt-1 font-mono text-lg font-semibold text-white">{brl(resumoGastosValidado.gerarVenda)}</div>
+          <div className="grid gap-3 lg:grid-cols-2">
+            <div className="flex min-h-[280px] items-center justify-center gap-8 border border-white/10 bg-white/[0.025] p-6">
+              <div className="relative h-52 w-52 shrink-0 rounded-full border border-white/10" style={{ background: resumoGastosValidado.total > 0 ? `conic-gradient(#39FF14 0 ${(resumoGastosValidado.gerarVenda / resumoGastosValidado.total) * 100}%, #64748b ${(resumoGastosValidado.gerarVenda / resumoGastosValidado.total) * 100}% 100%)` : "#111" }}><div className="absolute inset-11 flex flex-col items-center justify-center rounded-full border border-white/10 bg-black text-center"><span className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#39FF14]/70">Total</span><strong className="mt-2 font-mono text-base text-[#39FF14]">{brl(resumoGastosValidado.total)}</strong></div></div>
+              <div className="min-w-0 space-y-3">
+                <div><div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.16em] text-white/45"><span className="h-2 w-2 bg-[#39FF14]" />Gerar Venda</div><div className="mt-1 font-mono text-sm font-bold text-white">{brl(resumoGastosValidado.gerarVenda)}</div></div>
+                <div><div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.16em] text-white/45"><span className="h-2 w-2 bg-slate-500" />Manutenção</div><div className="mt-1 font-mono text-sm font-bold text-white">{brl(resumoGastosValidado.manutencao)}</div></div>
+              </div>
             </div>
-            <div className="border border-white/10 bg-white/[0.025] p-3">
-              <div className="text-[9px] uppercase tracking-[0.22em] text-white/45">Total Manutenção</div>
-              <div className="mt-1 font-mono text-lg font-semibold text-white">{brl(resumoGastosValidado.manutencao)}</div>
-            </div>
-            <div className="border border-[#39FF14]/35 bg-[#39FF14]/[0.045] p-3 shadow-[inset_0_0_20px_rgba(57,255,20,0.035)]">
-              <div className="text-[9px] uppercase tracking-[0.22em] text-[#39FF14]/70">Total de gastos</div>
-              <div className="mt-1 font-mono text-lg font-bold text-[#39FF14]">{brl(resumoGastosValidado.total)}</div>
+            <div className="min-h-[280px] border border-white/10 bg-white/[0.025] p-5">
+              <div className="mb-3 border-b border-white/10 pb-2 text-[11px] font-bold uppercase tracking-[0.2em] text-[#39FF14]">Categorias dos gastos</div>
+              <div className="max-h-56 space-y-3 overflow-y-auto pr-2">
+                {categoriasGastosValidadas.length === 0 ? <div className="py-6 text-center text-[9px] uppercase tracking-widest text-white/30">Nenhuma categoria validada</div> : categoriasGastosValidadas.map(([categoria, valor]) => <div key={categoria} className="flex items-center justify-between gap-3 border-b border-white/[0.06] pb-2 text-[10px]"><span className="truncate uppercase tracking-[0.12em] text-white/50">{categoria}</span><strong className="shrink-0 font-mono text-white">{brl(valor)}</strong></div>)}
+              </div>
             </div>
           </div>
         </section>
       )}
 
-      {formsFiltrados.length === 0 ? (
+      {tipoAtivo === "contratacao" && (
+        <section className="relative z-10 border border-[#39FF14]/25 bg-black/55 p-4 backdrop-blur-md">
+          <div className="mb-3 flex items-center justify-between border-b border-[#39FF14]/15 pb-3">
+            <h2 className="text-[10px] font-bold uppercase tracking-[0.28em] text-[#39FF14]">/ / RESUMO VALIDADO</h2>
+            <span className="text-[9px] uppercase tracking-[0.2em] text-white/40">
+              {resumoContratacaoValidado.quantidade} {resumoContratacaoValidado.quantidade === 1 ? "registro" : "registros"}
+            </span>
+          </div>
+          <div className="grid gap-3 md:grid-cols-3">
+            <div className="border border-white/10 bg-white/[0.025] p-3">
+              <div className="text-[9px] uppercase tracking-[0.22em] text-white/45">Candidatos</div>
+              <div className="mt-1 font-mono text-lg font-semibold text-white">{resumoContratacaoValidado.candidatos.toLocaleString("pt-BR")}</div>
+            </div>
+            <div className="border border-[#39FF14]/35 bg-[#39FF14]/[0.045] p-3">
+              <div className="text-[9px] uppercase tracking-[0.22em] text-[#39FF14]/70">Contratados</div>
+              <div className="mt-1 font-mono text-lg font-bold text-[#39FF14]">{resumoContratacaoValidado.contratados.toLocaleString("pt-BR")}</div>
+            </div>
+            <div className="border border-white/10 bg-white/[0.025] p-3">
+              <div className="text-[9px] uppercase tracking-[0.22em] text-white/45">Diretoria</div>
+              <div className="mt-1 truncate text-sm font-bold uppercase tracking-wider text-white">
+                {resumoContratacaoValidado.diretorias.size === 0
+                  ? "—"
+                  : resumoContratacaoValidado.diretorias.size === 1
+                    ? Array.from(resumoContratacaoValidado.diretorias)[0]
+                    : `${resumoContratacaoValidado.diretorias.size} DIRETORIAS`}
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {formsFiltrados.length === 0 && tipoAtivo !== "planejamento" && tipoAtivo !== "verba_cury" && tipoAtivo !== "gastos_pessoais" ? (
         <Card className={cyberAtivo ? "relative z-10 bg-white/[0.02] border-white/10 text-white" : ""}>
           <CardContent className="flex flex-col items-center gap-2 py-12 text-center">
             <FileText className={`h-10 w-10 ${cyberAtivo ? "text-[#39FF14]" : "text-muted-foreground"}`} />
@@ -693,49 +992,42 @@ function Dashboard() {
         <section className="relative z-10">
           <div className="mb-3 flex items-end justify-between">
             <div>
-              <h2 className="text-[10px] font-bold uppercase tracking-[0.28em] text-[#39FF14]">/ / VERBAS POR RESPONSÁVEL</h2>
+              <h2 className="text-[10px] font-bold uppercase tracking-[0.28em] text-[#39FF14]">/ / VERBAS POR SUPERINTENDENTE</h2>
               <p className="mt-1 text-[10px] uppercase tracking-[0.16em] text-white/35">Selecione um cartão para escolher a competência</p>
             </div>
             <span className="text-[9px] uppercase tracking-[0.2em] text-white/40">
-              {verbasPorResponsavel.length} {verbasPorResponsavel.length === 1 ? "responsável" : "responsáveis"}
+              {entidadesVerbaCury.length} {entidadesVerbaCury.length === 1 ? "superintendente" : "superintendentes"}
             </span>
           </div>
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {verbasPorResponsavel.map((grupo) => {
-              const valorTotal = grupo.formularios.reduce(
-                (soma, formulario) => soma + (Number(formulario.valor_agilitas) || 0) + (Number(formulario.valor_marketing) || 0),
-                0,
-              );
-              const totalMeses = new Set(
-                grupo.formularios.map((formulario) => `${formulario.ano_referencia || 0}-${formulario.mes_referencia || 0}`),
-              ).size;
-              const mediaMensal = totalMeses > 0 ? valorTotal / totalMeses : 0;
-
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+            {entidadesVerbaCury.map((grupo) => {
               return (
                 <button
-                  key={grupo.chave}
+                  key={grupo.nome}
                   type="button"
+                  disabled={grupo.formularios.length === 0}
                   onClick={() => setResponsavelSelecionado({ nome: grupo.nome, formularios: grupo.formularios })}
-                  className="group border border-[#39FF14]/30 bg-black/55 p-4 text-left backdrop-blur-md transition hover:border-[#39FF14] hover:bg-[#39FF14]/[0.045] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#39FF14]"
+                  className="group border border-[#39FF14]/30 bg-black/55 p-4 text-left backdrop-blur-md transition hover:border-[#39FF14] hover:bg-[#39FF14]/[0.045] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#39FF14] disabled:cursor-default disabled:opacity-55"
                 >
                   <div className="border-b border-white/10 pb-3">
-                    <div className="text-[9px] uppercase tracking-[0.2em] text-white/35">Responsável</div>
+                    <div className="text-[9px] uppercase tracking-[0.2em] text-white/35">Superintendente</div>
                     <h3 className="mt-1 text-sm font-bold uppercase tracking-wider text-[#39FF14]">{grupo.nome}</h3>
                   </div>
                   <div className="mt-3 space-y-2 text-[10px] uppercase tracking-[0.14em]">
                     <div className="flex items-center justify-between border border-white/10 p-2">
                       <span className="text-white/45">Total de meses</span>
-                      <span className="font-mono text-sm font-bold text-white">{totalMeses}</span>
+                      <span className="font-mono text-sm font-bold text-white">{grupo.totalMeses}</span>
                     </div>
                     <div className="flex items-center justify-between border border-white/10 p-2">
                       <span className="text-white/45">Total de verba</span>
-                      <span className="font-mono text-sm font-bold text-white">{brl(valorTotal)}</span>
+                      <span className="font-mono text-sm font-bold text-white">{brl(grupo.totalVerba)}</span>
                     </div>
                     <div className="flex items-center justify-between border border-[#39FF14]/30 bg-[#39FF14]/[0.035] p-2">
                       <span className="text-[#39FF14]/65">Média / mês</span>
-                      <span className="font-mono text-sm font-bold text-[#39FF14]">{brl(mediaMensal)}</span>
+                      <span className="font-mono text-sm font-bold text-[#39FF14]">{brl(grupo.mediaMensal)}</span>
                     </div>
                   </div>
+                  <div className="mt-3 text-[8px] uppercase tracking-[0.14em] text-white/30">{grupo.formularios.length > 0 ? "Clique para escolher o mês" : "Sem verba cadastrada"}</div>
                 </button>
               );
             })}
@@ -749,25 +1041,108 @@ function Dashboard() {
               <p className="mt-1 text-[10px] uppercase tracking-[0.16em] text-white/35">Selecione um cartão para escolher o mês</p>
             </div>
             <span className="text-[9px] uppercase tracking-[0.2em] text-white/40">
-              {verbasPorResponsavel.length} {verbasPorResponsavel.length === 1 ? "superintendente" : "superintendentes"}
+              {entidadesGastosPessoais.length} {entidadesGastosPessoais.length === 1 ? "superintendente" : "superintendentes"}
+            </span>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+            {entidadesGastosPessoais.map((grupo) => {
+              return (
+                <button
+                  key={grupo.nome}
+                  type="button"
+                  disabled={grupo.formularios.length === 0}
+                  onClick={() => setResponsavelSelecionado({ nome: grupo.nome, formularios: grupo.formularios })}
+                  className="group border border-[#39FF14]/30 bg-black/55 p-4 text-left backdrop-blur-md transition hover:border-[#39FF14] hover:bg-[#39FF14]/[0.045] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#39FF14] disabled:cursor-default disabled:opacity-55"
+                >
+                  <div className="border-b border-white/10 pb-3">
+                    <div className="text-[9px] uppercase tracking-[0.2em] text-white/35">Superintendente</div>
+                    <h3 className="mt-1 text-sm font-bold uppercase tracking-wider text-[#39FF14]">{grupo.nome}</h3>
+                  </div>
+                  <div className="mt-3 space-y-2 text-[10px] uppercase tracking-[0.14em]">
+                    <div className="flex items-center justify-between border border-white/10 p-2">
+                      <span className="text-white/45">Gerar Venda</span>
+                      <span className="font-mono text-sm font-bold text-white">{brl(grupo.gerarVenda)}</span>
+                    </div>
+                    <div className="flex items-center justify-between border border-white/10 p-2">
+                      <span className="text-white/45">Manutenção</span>
+                      <span className="font-mono text-sm font-bold text-white">{brl(grupo.manutencao)}</span>
+                    </div>
+                    <div className="flex items-center justify-between border border-white/10 p-2">
+                      <span className="text-white/45">Total</span>
+                      <span className="font-mono text-sm font-bold text-white">{brl(grupo.total)}</span>
+                    </div>
+                    <div className="flex items-center justify-between border border-[#39FF14]/30 bg-[#39FF14]/[0.035] p-2">
+                      <span className="text-[#39FF14]/65">Média / mês</span>
+                      <span className="font-mono text-sm font-bold text-[#39FF14]">{brl(grupo.mediaMensal)}</span>
+                    </div>
+                  </div>
+                  <div className="mt-3 text-[8px] uppercase tracking-[0.14em] text-white/30">{grupo.formularios.length > 0 ? "Clique para escolher o mês" : "Sem gastos cadastrados"}</div>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      ) : tipoAtivo === "planejamento" ? (
+        <section className="hidden">
+          <div className="mb-3 flex items-end justify-between">
+            <div>
+              <h2 className="text-[10px] font-bold uppercase tracking-[0.28em] text-[#39FF14]">/ / PLANEJAMENTOS POR RESPONSÁVEL</h2>
+              <p className="mt-1 text-[10px] uppercase tracking-[0.16em] text-white/35">Selecione um cartão para escolher o mês</p>
+            </div>
+            <span className="text-[9px] uppercase tracking-[0.2em] text-white/40">{verbasPorResponsavel.length} {verbasPorResponsavel.length === 1 ? "responsável" : "responsáveis"}</span>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {verbasPorResponsavel.map((grupo) => {
+              const totais = grupo.formularios.reduce((acc, formulario) => {
+                const plano = planMap[formulario.id];
+                acc.meta += plano?.metaSup || 0;
+                acc.verba += plano?.verbaTotal || 0;
+                acc.corretores += plano?.corretoresAcelera || 0;
+                return acc;
+              }, { meta: 0, verba: 0, corretores: 0 });
+              const totalMeses = new Set(grupo.formularios.map((formulario) => `${formulario.ano_referencia || 0}-${formulario.mes_referencia || 0}`)).size;
+              return (
+                <button key={grupo.chave} type="button" onClick={() => setResponsavelSelecionado({ nome: grupo.nome, formularios: grupo.formularios })} className="group border border-[#39FF14]/30 bg-black/55 p-4 text-left backdrop-blur-md transition hover:border-[#39FF14] hover:bg-[#39FF14]/[0.045] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#39FF14]">
+                  <div className="border-b border-white/10 pb-3"><div className="text-[9px] uppercase tracking-[0.2em] text-white/35">Responsável</div><h3 className="mt-1 text-sm font-bold uppercase tracking-wider text-[#39FF14]">{grupo.nome}</h3></div>
+                  <div className="mt-3 space-y-2 text-[10px] uppercase tracking-[0.14em]">
+                    <div className="flex items-center justify-between border border-white/10 p-2"><span className="text-white/45">Total de meses</span><span className="font-mono text-sm font-bold text-white">{totalMeses}</span></div>
+                    <div className="grid grid-cols-2 gap-3 border border-white/10 p-2">
+                      <div><span className="block text-white/45">Meta planejada</span><span className="mt-1 block font-mono text-sm font-bold text-white">{totais.meta.toLocaleString("pt-BR")}</span></div>
+                      <div><span className="block text-white/45">Meta realizada</span><span className="mt-1 block font-mono text-sm font-bold text-white/55">0</span></div>
+                    </div>
+                    <div className="flex items-center justify-between border border-white/10 p-2"><span className="text-white/45">Verba planejada</span><span className="font-mono text-sm font-bold text-white">{brl(totais.verba)}</span></div>
+                    <div className="flex items-center justify-between border border-[#39FF14]/30 bg-[#39FF14]/[0.035] p-2"><span className="text-[#39FF14]/65">Corretores Acelera</span><span className="font-mono text-sm font-bold text-[#39FF14]">{totais.corretores}</span></div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      ) : tipoAtivo === "contratacao" ? (
+        <section className="relative z-10">
+          <div className="mb-3 flex items-end justify-between">
+            <div>
+              <h2 className="text-[10px] font-bold uppercase tracking-[0.28em] text-[#39FF14]">/ / CONTRATAÇÕES POR RESPONSÁVEL</h2>
+              <p className="mt-1 text-[10px] uppercase tracking-[0.16em] text-white/35">Selecione um cartão para escolher o mês</p>
+            </div>
+            <span className="text-[9px] uppercase tracking-[0.2em] text-white/40">
+              {verbasPorResponsavel.length} {verbasPorResponsavel.length === 1 ? "responsável" : "responsáveis"}
             </span>
           </div>
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {verbasPorResponsavel.map((grupo) => {
               const totais = grupo.formularios.reduce(
                 (acumulado, formulario) => {
-                  const gastos = gastosDoFormulario(formulario.id);
-                  acumulado.gerarVenda += gastos.gv;
-                  acumulado.manutencao += gastos.mn;
-                  acumulado.total += gastos.total;
+                  const contratacao = contratacaoMap[formulario.id] || { candidatos: 0, contratados: 0, total: 0 };
+                  acumulado.candidatos += contratacao.candidatos;
+                  acumulado.contratados += contratacao.contratados;
                   return acumulado;
                 },
-                { gerarVenda: 0, manutencao: 0, total: 0 },
+                { candidatos: 0, contratados: 0 },
               );
-              const totalMeses = new Set(
-                grupo.formularios.map((formulario) => `${formulario.ano_referencia || 0}-${formulario.mes_referencia || 0}`),
-              ).size;
-              const mediaMensal = totalMeses > 0 ? totais.total / totalMeses : 0;
+              const totalMeses = new Set(grupo.formularios.map((formulario) => `${formulario.ano_referencia || 0}-${formulario.mes_referencia || 0}`)).size;
+              const conversao = totais.candidatos > 0 ? (totais.contratados / totais.candidatos) * 100 : 0;
+              const diretorias = Array.from(new Set(grupo.formularios.map((formulario) => formulario.diretor).filter(Boolean)));
 
               return (
                 <button
@@ -777,25 +1152,26 @@ function Dashboard() {
                   className="group border border-[#39FF14]/30 bg-black/55 p-4 text-left backdrop-blur-md transition hover:border-[#39FF14] hover:bg-[#39FF14]/[0.045] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#39FF14]"
                 >
                   <div className="border-b border-white/10 pb-3">
-                    <div className="text-[9px] uppercase tracking-[0.2em] text-white/35">Superintendente</div>
+                    <div className="text-[9px] uppercase tracking-[0.2em] text-white/35">Responsável</div>
                     <h3 className="mt-1 text-sm font-bold uppercase tracking-wider text-[#39FF14]">{grupo.nome}</h3>
+                    <div className="mt-1 truncate text-[9px] uppercase tracking-[0.16em] text-white/35">{diretorias.join(" · ") || "Sem diretoria"}</div>
                   </div>
                   <div className="mt-3 space-y-2 text-[10px] uppercase tracking-[0.14em]">
                     <div className="flex items-center justify-between border border-white/10 p-2">
-                      <span className="text-white/45">Gerar Venda</span>
-                      <span className="font-mono text-sm font-bold text-white">{brl(totais.gerarVenda)}</span>
+                      <span className="text-white/45">Candidatos</span>
+                      <span className="font-mono text-sm font-bold text-white">{totais.candidatos}</span>
                     </div>
                     <div className="flex items-center justify-between border border-white/10 p-2">
-                      <span className="text-white/45">Manutenção</span>
-                      <span className="font-mono text-sm font-bold text-white">{brl(totais.manutencao)}</span>
+                      <span className="text-white/45">Contratados</span>
+                      <span className="font-mono text-sm font-bold text-white">{totais.contratados}</span>
                     </div>
                     <div className="flex items-center justify-between border border-white/10 p-2">
-                      <span className="text-white/45">Total</span>
-                      <span className="font-mono text-sm font-bold text-white">{brl(totais.total)}</span>
+                      <span className="text-white/45">Total de meses</span>
+                      <span className="font-mono text-sm font-bold text-white">{totalMeses}</span>
                     </div>
                     <div className="flex items-center justify-between border border-[#39FF14]/30 bg-[#39FF14]/[0.035] p-2">
-                      <span className="text-[#39FF14]/65">Média / mês</span>
-                      <span className="font-mono text-sm font-bold text-[#39FF14]">{brl(mediaMensal)}</span>
+                      <span className="text-[#39FF14]/65">Conversão</span>
+                      <span className="font-mono text-sm font-bold text-[#39FF14]">{conversao.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%</span>
                     </div>
                   </div>
                 </button>
@@ -1009,8 +1385,12 @@ function Dashboard() {
               .sort((a, b) => ((b.ano_referencia || 0) * 100 + (b.mes_referencia || 0)) - ((a.ano_referencia || 0) * 100 + (a.mes_referencia || 0)))
               .map((formulario) => {
                 const status = formulario.status || "editando";
+                const contratacao = contratacaoMap[formulario.id] || { candidatos: 0, contratados: 0, total: 0 };
+                const planejamento = planMap[formulario.id];
                 const valor = tipoAtivo === "gastos_pessoais"
                   ? gastosDoFormulario(formulario.id).total
+                  : tipoAtivo === "planejamento"
+                    ? planejamento?.verbaTotal || 0
                   : (Number(formulario.valor_agilitas) || 0) + (Number(formulario.valor_marketing) || 0);
                 return (
                   <div key={formulario.id} className="flex border border-white/10 bg-white/[0.025] transition hover:border-[#39FF14]/70">
@@ -1033,16 +1413,26 @@ function Dashboard() {
                         )}
                       </div>
                       <div className="text-right">
-                        <div className="font-mono text-xs font-bold text-[#39FF14]">{brl(valor)}</div>
+                        {tipoAtivo === "contratacao" ? (
+                          <div className="font-mono text-[10px] font-bold uppercase text-[#39FF14]">
+                            {contratacao.candidatos} candidatos · {contratacao.contratados} contratados
+                          </div>
+                        ) : tipoAtivo === "planejamento" ? (
+                          <div className="font-mono text-[10px] font-bold uppercase text-[#39FF14]">
+                            Meta {Number(planejamento?.metaSup || 0).toLocaleString("pt-BR")} · {brl(valor)}
+                          </div>
+                        ) : (
+                          <div className="font-mono text-xs font-bold text-[#39FF14]">{brl(valor)}</div>
+                        )}
                         <div className="mt-1 text-[9px] uppercase tracking-[0.16em] text-white/45">{status === "editando" ? "Em aberto" : status}</div>
                       </div>
                     </button>
-                    {isAdmin && tipoAtivo === "verba_cury" && (
+                    {isAdmin && (tipoAtivo === "verba_cury" || tipoAtivo === "contratacao" || tipoAtivo === "planejamento" || tipoAtivo === "gastos_pessoais") && (
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
                           <button
                             type="button"
-                            aria-label={`Excluir verba de ${formulario.mes_referencia ? MESES[formulario.mes_referencia - 1] : "mês não informado"}`}
+                            aria-label={`Excluir ${tipoAtivo === "contratacao" ? "formulário de contratação" : tipoAtivo === "planejamento" ? "planejamento" : tipoAtivo === "gastos_pessoais" ? "gastos pessoais" : "verba"} de ${formulario.mes_referencia ? MESES[formulario.mes_referencia - 1] : "mês não informado"}`}
                             className="flex w-12 shrink-0 items-center justify-center border-l border-red-500/25 text-red-400/70 transition hover:bg-red-500/10 hover:text-red-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
                           >
                             <Trash2 className="h-4 w-4" />
@@ -1050,9 +1440,11 @@ function Dashboard() {
                         </AlertDialogTrigger>
                         <AlertDialogContent className="rounded-none border border-red-500/40 bg-black/95 text-white backdrop-blur-xl">
                           <AlertDialogHeader>
-                            <AlertDialogTitle className="text-sm uppercase tracking-[0.2em] text-red-400">/ / EXCLUIR VERBA CURY?</AlertDialogTitle>
+                            <AlertDialogTitle className="text-sm uppercase tracking-[0.2em] text-red-400">
+                              / / {tipoAtivo === "contratacao" ? "EXCLUIR CONTRATAÇÃO?" : tipoAtivo === "planejamento" ? "EXCLUIR PLANEJAMENTO?" : tipoAtivo === "gastos_pessoais" ? "EXCLUIR GASTOS PESSOAIS?" : "EXCLUIR VERBA CURY?"}
+                            </AlertDialogTitle>
                             <AlertDialogDescription className="text-xs text-white/50">
-                              A verba de {formulario.mes_referencia ? MESES[formulario.mes_referencia - 1] : "mês não informado"}/{formulario.ano_referencia || "—"} e todos os lançamentos vinculados serão removidos. Esta ação não pode ser desfeita.
+                              {tipoAtivo === "contratacao" ? "O formulário de contratação" : tipoAtivo === "planejamento" ? "O planejamento" : tipoAtivo === "gastos_pessoais" ? "Os gastos pessoais" : "A verba"} de {formulario.mes_referencia ? MESES[formulario.mes_referencia - 1] : "mês não informado"}/{formulario.ano_referencia || "—"} e todos os lançamentos vinculados serão removidos. Esta ação não pode ser desfeita.
                             </AlertDialogDescription>
                           </AlertDialogHeader>
                           <AlertDialogFooter>
@@ -1067,12 +1459,12 @@ function Dashboard() {
                                 const { error: erroFormulario } = await supabase.from("formularios").delete().eq("id", formulario.id);
                                 if (erroFormulario) return toast.error(erroFormulario.message);
 
-                                pushUndo(`Verba de ${formulario.mes_referencia ? MESES[formulario.mes_referencia - 1] : "mês não informado"}/${formulario.ano_referencia || "—"} excluída`, [
+                                pushUndo(`${tipoAtivo === "contratacao" ? "Contratação" : tipoAtivo === "planejamento" ? "Planejamento" : tipoAtivo === "gastos_pessoais" ? "Gastos pessoais" : "Verba"} de ${formulario.mes_referencia ? MESES[formulario.mes_referencia - 1] : "mês não informado"}/${formulario.ano_referencia || "—"} excluído`, [
                                   { table: "formularios", rows: formulariosExcluidos || [] },
                                   { table: "lancamentos", rows: lancamentosExcluidos || [] },
                                 ]);
                                 setResponsavelSelecionado(null);
-                                toast.success("Verba Cury excluída com sucesso.");
+                                toast.success(tipoAtivo === "contratacao" ? "Formulário de contratação excluído com sucesso." : tipoAtivo === "planejamento" ? "Planejamento excluído com sucesso." : tipoAtivo === "gastos_pessoais" ? "Gastos pessoais excluídos com sucesso." : "Verba Cury excluída com sucesso.");
                                 await load();
                               }}
                             >
