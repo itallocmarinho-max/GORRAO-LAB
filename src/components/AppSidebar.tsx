@@ -7,7 +7,6 @@ import {
   SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
-  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
@@ -16,48 +15,28 @@ import {
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
 import { useActiveFormType } from "@/hooks/useActiveFormType";
-import {
-  LogOut,
-  ShieldCheck,
-  Rocket,
-  Sparkles,
-  Star,
-  Satellite,
-  Telescope,
-  Orbit,
-  Moon,
-  Globe,
-  Atom,
-  Compass,
-  Radar,
-  Gem,
-  Aperture,
-} from "lucide-react";
-
+import { LogOut, ShieldCheck } from "lucide-react";
 
 type Item = {
   title: string;
   to: string;
   search?: Record<string, string>;
-  icon: React.ComponentType<{ className?: string }>;
   adminOnly?: boolean;
   comingSoonForUsers?: boolean;
 };
 
 const FORM_ITEMS: Item[] = [
-  { title: "// VERBA CURY", to: "/dashboard", search: { tipo: "verba_cury" }, icon: Sparkles },
-  { title: "// GASTOS PESSOAIS", to: "/dashboard", search: { tipo: "gastos_pessoais" }, icon: Star },
-  { title: "// CONTRATAÇÃO", to: "/dashboard", search: { tipo: "contratacao" }, icon: Satellite },
-  { title: "// PLANEJAMENTO", to: "/dashboard", search: { tipo: "planejamento" }, icon: Telescope },
-  { title: "// ACELERA VENDAS", to: "/acelera", icon: Rocket },
-  { title: "// PREVISÃO", to: "/previsao", icon: Orbit, comingSoonForUsers: true },
+  { title: "/ / VERBA CURY", to: "/dashboard", search: { tipo: "verba_cury" } },
+  { title: "/ / GASTOS PESSOAIS", to: "/dashboard", search: { tipo: "gastos_pessoais" } },
+  { title: "/ / CONTRATAÇÃO", to: "/dashboard", search: { tipo: "contratacao" } },
+  { title: "/ / PLANEJAMENTO", to: "/dashboard", search: { tipo: "planejamento" } },
+  { title: "/ / ACELERA VENDAS", to: "/acelera" },
+  { title: "/ / PREVISÃO", to: "/previsao", comingSoonForUsers: true },
 ];
-
-const ADMIN_ITEMS: Item[] = [];
 
 type DirectorItem = Item & { directorOrAdmin?: boolean };
 const DIRETOR_ITEMS: DirectorItem[] = [
-  { title: "// FINANCEIRO", to: "/financeiro", icon: Gem, directorOrAdmin: true },
+  { title: "/ / FINANCEIRO", to: "/financeiro", directorOrAdmin: true },
 ];
 
 export function AppSidebar() {
@@ -67,8 +46,12 @@ export function AppSidebar() {
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const search = useRouterState({ select: (s) => s.location.search as Record<string, unknown> });
-  const isVerbaCury = pathname === "/dashboard" && (search?.tipo === "verba_cury" || search?.tipo === "planejamento" || search?.tipo === "gastos_pessoais");
-  const itemClass = (it: Item) => isActive(it) ? "text-[#39FF14]" : "text-white";
+  const isVerbaCury =
+    pathname === "/dashboard" &&
+    (search?.tipo === "verba_cury" ||
+      search?.tipo === "planejamento" ||
+      search?.tipo === "gastos_pessoais");
+  const itemClass = (it: Item) => (isActive(it) ? "text-[#39FF14]" : "text-white");
 
   const handleLogout = async () => {
     await signOut();
@@ -96,7 +79,8 @@ export function AppSidebar() {
       if (i.adminOnly) return role === "admin";
       if (i.to === "/leads" && role === "admin") return false;
       // Superintendente não vê Usuários nem Painel de Controle (nem como "Em breve")
-      if (isSuperintendente && (i.to === "/admin/usuarios" || i.to === "/admin/painel")) return false;
+      if (isSuperintendente && (i.to === "/admin/usuarios" || i.to === "/admin/painel"))
+        return false;
       return true;
     });
 
@@ -116,8 +100,8 @@ export function AppSidebar() {
         className="pointer-events-none absolute inset-0 h-full w-full object-cover -z-10"
       />
       <div className="pointer-events-none absolute inset-0 -z-10 bg-black/40 backdrop-blur-xl" />
-      <SidebarHeader className="border-b border-sidebar-border">
-        <Link to="/dashboard" className="flex items-center justify-center w-full p-0">
+      <SidebarHeader className="flex-row items-center gap-1 border-b border-sidebar-border">
+        <Link to="/dashboard" className="flex min-w-0 flex-1 items-center justify-center p-0">
           <img
             src={gorraoLogo}
             alt="Diretoria Gorrão Cury"
@@ -131,16 +115,27 @@ export function AppSidebar() {
             <SidebarMenu>
               {visible(FORM_ITEMS).map((it) => (
                 <SidebarMenuItem key={it.title}>
-                  {it.comingSoonForUsers && it.search?.tipo !== "contratacao" && role !== "admin" ? (
-                    <SidebarMenuButton disabled tooltip={`${it.title} — Em breve`} className={`opacity-60 cursor-not-allowed ${itemClass(it)}`}>
-                      <it.icon className={`h-4 w-4 ${itemClass(it)}`} />
+                  {it.comingSoonForUsers &&
+                  it.search?.tipo !== "contratacao" &&
+                  role !== "admin" ? (
+                    <SidebarMenuButton
+                      disabled
+                      tooltip={`${it.title} — Em breve`}
+                      className={`opacity-60 cursor-not-allowed ${itemClass(it)}`}
+                    >
                       <span className={itemClass(it)}>{it.title}</span>
-                      <span className="ml-auto rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground group-data-[collapsible=icon]:hidden">Em breve</span>
+                      <span className="ml-auto rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground group-data-[collapsible=icon]:hidden">
+                        Em breve
+                      </span>
                     </SidebarMenuButton>
                   ) : (
-                    <SidebarMenuButton asChild isActive={isActive(it)} tooltip={it.title} className={itemClass(it)}>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={isActive(it)}
+                      tooltip={it.title}
+                      className={itemClass(it)}
+                    >
                       <Link to={it.to} search={it.search as never}>
-                        <it.icon className={`h-4 w-4 ${itemClass(it)}`} />
                         <span className={itemClass(it)}>{it.title}</span>
                       </Link>
                     </SidebarMenuButton>
@@ -154,15 +149,24 @@ export function AppSidebar() {
                 return (
                   <SidebarMenuItem key={it.title}>
                     {showAsComingSoon ? (
-                      <SidebarMenuButton disabled tooltip={`${it.title} — Em breve`} className={`opacity-60 cursor-not-allowed ${itemClass(it)}`}>
-                        <it.icon className={`h-4 w-4 ${itemClass(it)}`} />
+                      <SidebarMenuButton
+                        disabled
+                        tooltip={`${it.title} — Em breve`}
+                        className={`opacity-60 cursor-not-allowed ${itemClass(it)}`}
+                      >
                         <span className={itemClass(it)}>{it.title}</span>
-                        <span className="ml-auto rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground group-data-[collapsible=icon]:hidden">Em breve</span>
+                        <span className="ml-auto rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground group-data-[collapsible=icon]:hidden">
+                          Em breve
+                        </span>
                       </SidebarMenuButton>
                     ) : (
-                      <SidebarMenuButton asChild isActive={isActive(it)} tooltip={it.title} className={itemClass(it)}>
+                      <SidebarMenuButton
+                        asChild
+                        isActive={isActive(it)}
+                        tooltip={it.title}
+                        className={itemClass(it)}
+                      >
                         <Link to={it.to}>
-                          <it.icon className={`h-4 w-4 ${itemClass(it)}`} />
                           <span className={itemClass(it)}>{it.title}</span>
                         </Link>
                       </SidebarMenuButton>
@@ -181,13 +185,24 @@ export function AppSidebar() {
             {nome && <div className="truncate text-[#39FF14]/60">{user?.email}</div>}
           </div>
           {role === "admin" && (
-            <Button asChild variant="ghost" size="icon" className="text-[#39FF14] hover:bg-sidebar-accent hover:text-sidebar-accent-foreground" title="Admin">
+            <Button
+              asChild
+              variant="ghost"
+              size="icon"
+              className="text-[#39FF14] hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+              title="Admin"
+            >
               <Link to="/admin/painel">
                 <ShieldCheck className="h-4 w-4" />
               </Link>
             </Button>
           )}
-          <Button variant="ghost" size="icon" onClick={handleLogout} className="text-[#39FF14] hover:bg-sidebar-accent hover:text-sidebar-accent-foreground">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleLogout}
+            className="text-[#39FF14] hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+          >
             <LogOut className="h-4 w-4" />
           </Button>
         </div>

@@ -116,6 +116,7 @@ export type Database = {
           status: string
           superintendente: string | null
           tipo: string
+          tipo_verba: string
           usuario_id: string
           valor_agilitas: number
           valor_marketing: number
@@ -134,6 +135,7 @@ export type Database = {
           status?: string
           superintendente?: string | null
           tipo?: string
+          tipo_verba?: string
           usuario_id: string
           valor_agilitas?: number
           valor_marketing?: number
@@ -152,6 +154,7 @@ export type Database = {
           status?: string
           superintendente?: string | null
           tipo?: string
+          tipo_verba?: string
           usuario_id?: string
           valor_agilitas?: number
           valor_marketing?: number
