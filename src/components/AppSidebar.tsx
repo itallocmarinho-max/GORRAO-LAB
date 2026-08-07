@@ -26,6 +26,7 @@ type Item = {
 };
 
 const FORM_ITEMS: Item[] = [
+  { title: "/ / INÍCIO", to: "/inicio" },
   { title: "/ / VERBA CURY", to: "/dashboard", search: { tipo: "verba_cury" } },
   { title: "/ / GASTOS PESSOAIS", to: "/dashboard", search: { tipo: "gastos_pessoais" } },
   { title: "/ / CONTRATAÇÃO", to: "/dashboard", search: { tipo: "contratacao" } },

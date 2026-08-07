@@ -33,7 +33,7 @@ function LoginPage() {
   const [forgotBusy, setForgotBusy] = useState(false);
 
   useEffect(() => {
-    if (!loading && user) navigate({ to: "/dashboard" });
+    if (!loading && user) navigate({ to: "/inicio" });
   }, [user, loading, navigate]);
 
   const signIn = async (e: React.FormEvent) => {
@@ -42,7 +42,7 @@ function LoginPage() {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     setBusy(false);
     if (error) toast.error(error.message);
-    else navigate({ to: "/dashboard" });
+    else navigate({ to: "/inicio" });
   };
 
   const sendReset = async (e: React.FormEvent) => {

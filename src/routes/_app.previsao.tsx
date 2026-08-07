@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
@@ -529,65 +529,10 @@ function PrevisaoPage() {
       {/* Tabela vendas (toggle) */}
       <Card className={cyberTableCard}>
         <CardHeader>
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <CardTitle className={cyberTableTitle}>
-              {viewVendas === "emp" ? "// VENDAS POR PRODUTO E EMPREENDIMENTO" : "// VENDAS POR GERENTE"}
-            </CardTitle>
-            <div className="inline-flex rounded-md border bg-muted/30 p-1">
-              <Button
-                size="sm"
-                variant={viewVendas === "emp" ? "default" : "ghost"}
-                className="h-8"
-                onClick={() => setViewVendas("emp")}
-              >
-                Ver por empreendimento
-              </Button>
-              <Button
-                size="sm"
-                variant={viewVendas === "ger" ? "default" : "ghost"}
-                className="h-8"
-                onClick={() => setViewVendas("ger")}
-              >
-                Ver por gerente
-              </Button>
-            </div>
-          </div>
+          <CardTitle className={cyberTableTitle}>// VENDAS POR PRODUTO E GERENTE</CardTitle>
         </CardHeader>
         <CardContent>
-          {viewVendas === "emp" ? (
-            tabelaEmp.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Sem dados.</p>
-            ) : (
-              <ProdutoEmpreendimentoTable rows={tabelaEmpSorted} produtos={produtos} />
-            )
-          ) : tabelaGer.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Sem dados.</p>
-          ) : (
-            <Table className={cyberTableClass}>
-              <TableHeader>
-                <TableRow>
-                  <SortHead label="Gerente" sortKey="nome" current={gerSort.key} dir={gerSort.dir} onClick={(k) => gerSort.toggle(k as any)} />
-                  <SortHead label="Superintendente" sortKey="sup" current={gerSort.key} dir={gerSort.dir} onClick={(k) => gerSort.toggle(k as any)} />
-                  <SortHead label="Previsão" sortKey="previsao" current={gerSort.key} dir={gerSort.dir} onClick={(k) => gerSort.toggle(k as any)} className={`text-right ${COL.previsao}`} />
-                  <SortHead label="Realizado" sortKey="realizado" current={gerSort.key} dir={gerSort.dir} onClick={(k) => gerSort.toggle(k as any)} className={`text-right ${COL.realizado}`} />
-                  <SortHead label="Saldo" sortKey="saldo" current={gerSort.key} dir={gerSort.dir} onClick={(k) => gerSort.toggle(k as any)} className={`text-right ${COL.saldo}`} />
-                  <SortHead label="% Realizado" sortKey="pct" current={gerSort.key} dir={gerSort.dir} onClick={(k) => gerSort.toggle(k as any)} className={`text-right whitespace-nowrap ${COL.pct}`} />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {tabelaGerSorted.map((g) => (
-                  <TableRow key={g.nome}>
-                    <TableCell className="font-medium">{g.nome}</TableCell>
-                    <TableCell className="text-muted-foreground">{g.sup ?? "—"}</TableCell>
-                    <TableCell className={`text-right font-mono ${COL.previsao}`}>{fmtNum(g.previsao)}</TableCell>
-                    <TableCell className={`text-right font-mono ${COL.realizado}`}>{fmtNumDec(g.realizado)}</TableCell>
-                    <TableCell className={`text-right font-mono ${COL.saldo}`} style={{ color: saldoColor(g.saldo) }}>{fmtNumDec(g.saldo)}</TableCell>
-                    <TableCell className={`text-right font-mono ${COL.pct}`} style={{ color: realizadoColor(g.realizado, g.previsao) }}>{fmtPct(g.realizado, g.previsao)}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
+          <ProdutoEmpreendimentoTable rows={tabelaEmpSorted} produtos={produtos} gerentes={tabelaGerSorted} vendas={vendasF} previsoes={previsoesF} />
         </CardContent>
       </Card>
 
@@ -1851,80 +1796,37 @@ function PrevisoesLancadasCard({ token, isAdmin, previsoes, onChange }: { token:
   );
 }
 
-// ============ Tabela hierárquica: Produto -> Empreendimento ============
+// ============ Tabelas independentes: Produto e Empreendimento ============
 type EmpRow = { nome: string; produto_id: string | null; previsao: number; realizado: number; saldo: number; pct: number; unidades: number };
-function ProdutoEmpreendimentoTable({ rows, produtos }: { rows: EmpRow[]; produtos: ProdutoLite[] }) {
+function ProdutoEmpreendimentoTable({ rows, produtos, gerentes, vendas, previsoes }: { rows: EmpRow[]; produtos: ProdutoLite[]; gerentes: Array<{ nome: string; sup: string | null; previsao: number; realizado: number; saldo: number; pct: number }>; vendas: Venda[]; previsoes: Previsao[] }) {
   const prodNome = useMemo(() => {
     const m = new Map<string, string>();
     for (const p of produtos) m.set(p.id, p.nome);
     return m;
   }, [produtos]);
-  const groups = useMemo(() => {
-    const map = new Map<string, { key: string; nome: string; emps: EmpRow[]; realizado: number; previsao: number }>();
-    for (const r of rows) {
-      const key = r.produto_id ?? "__sem_produto__";
-      const nome = r.produto_id ? (prodNome.get(r.produto_id) ?? "(produto removido)") : "Sem produto vinculado";
-      if (!map.has(key)) map.set(key, { key, nome, emps: [], realizado: 0, previsao: 0 });
-      const g = map.get(key)!;
-      g.emps.push(r);
-      g.realizado += r.realizado;
-      g.previsao += r.previsao;
-    }
-    return Array.from(map.values()).sort((a, b) => {
-      if (a.key === "__sem_produto__") return 1;
-      if (b.key === "__sem_produto__") return -1;
-      return b.realizado - a.realizado;
-    });
-  }, [rows, prodNome]);
-  const [openMap, setOpenMap] = useState<Record<string, boolean>>({});
+  const produtosRows = useMemo(() => {
+    const map = new Map<string, { key: string; nome: string; realizado: number; previsao: number; sups: Map<string, { realizado: number; previsao: number; empreendimentos: Map<string, number> }> }>();
+    const ensure = (key: string) => {
+      if (!map.has(key)) map.set(key, { key, nome: key === "__sem_produto__" ? "Sem produto vinculado" : (prodNome.get(key) ?? "(produto removido)"), realizado: 0, previsao: 0, sups: new Map() });
+      return map.get(key)!;
+    };
+    const ensureSup = (produto: ReturnType<typeof ensure>, nome: string) => {
+      if (!produto.sups.has(nome)) produto.sups.set(nome, { realizado: 0, previsao: 0, empreendimentos: new Map() });
+      return produto.sups.get(nome)!;
+    };
+    previsoes.forEach((previsao) => { const produto = ensure(previsao.produto_id ?? "__sem_produto__"); const valor = Number(previsao.preciso_vendas || 0); produto.previsao += valor; ensureSup(produto, previsao.superintendente || "—").previsao += valor; });
+    vendas.forEach((venda) => { const produto = ensure(venda.produto_id ?? "__sem_produto__"); const valor = Number(venda.unidades || 0); produto.realizado += valor; const sup = ensureSup(produto, venda.superintendente || "—"); sup.realizado += valor; const empreendimento = venda.empreendimento || "—"; sup.empreendimentos.set(empreendimento, (sup.empreendimentos.get(empreendimento) || 0) + valor); });
+    return Array.from(map.values()).sort((a, b) => a.key === "__sem_produto__" ? 1 : b.key === "__sem_produto__" ? -1 : a.nome.localeCompare(b.nome, "pt-BR"));
+  }, [vendas, previsoes, prodNome]);
+  const [produtosAbertos, setProdutosAbertos] = useState<Record<string, boolean>>({});
+  const [produtoEmpAberto, setProdutoEmpAberto] = useState<string | null>(null);
+  const produtoSelecionado = produtosRows.find((produto) => produto.key === produtoEmpAberto);
+  const empreendimentosSelecionados = produtoSelecionado ? Array.from(produtoSelecionado.sups.values()).reduce((map, sup) => { sup.empreendimentos.forEach((valor, nome) => map.set(nome, (map.get(nome) || 0) + valor)); return map; }, new Map<string, number>()) : new Map<string, number>();
+  const Cabecalho = () => <TableHeader><TableRow><TableHead>Nome</TableHead><TableHead className="text-right">Previsão</TableHead><TableHead className="text-right">Realizado</TableHead><TableHead className="text-right whitespace-nowrap">% Real.</TableHead></TableRow></TableHeader>;
   return (
-    <Table className={cyberTableClass}>
-      <TableHeader>
-        <TableRow>
-          <TableHead className="w-8"></TableHead>
-          <TableHead>Produto / Empreendimento</TableHead>
-          <TableHead className={`text-right ${COL.previsao}`}>Previsão</TableHead>
-          <TableHead className={`text-right ${COL.realizado}`}>Realizado</TableHead>
-          <TableHead className={`text-right ${COL.saldo}`}>Saldo</TableHead>
-          <TableHead className={`text-right whitespace-nowrap ${COL.pct}`}>% Realizado</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {groups.map((g) => {
-          const open = openMap[g.key] ?? false;
-          const saldo = g.realizado - g.previsao;
-          return (
-            <>
-              <TableRow key={g.key} className="bg-muted/40">
-                <TableCell>
-                  <button
-                    type="button"
-                    onClick={() => setOpenMap((m) => ({ ...m, [g.key]: !open }))}
-                    className="inline-flex items-center justify-center h-6 w-6 rounded hover:bg-muted"
-                  >
-                    <ChevronRight className={`h-4 w-4 transition-transform ${open ? "rotate-90" : ""}`} />
-                  </button>
-                </TableCell>
-                <TableCell className="font-semibold text-[#39FF14]">{g.nome} <span className="ml-1 text-xs text-muted-foreground">({g.emps.length})</span></TableCell>
-                <TableCell className={`text-right font-mono ${COL.previsao}`}>{fmtNum(g.previsao)}</TableCell>
-                <TableCell className={`text-right font-mono ${COL.realizado}`}>{fmtNumDec(g.realizado)}</TableCell>
-                <TableCell className={`text-right font-mono ${COL.saldo}`} style={{ color: saldoColor(saldo) }}>{fmtNumDec(saldo)}</TableCell>
-                <TableCell className={`text-right font-mono ${COL.pct}`} style={{ color: realizadoColor(g.realizado, g.previsao) }}>{fmtPct(g.realizado, g.previsao)}</TableCell>
-              </TableRow>
-              {open && g.emps.map((e) => (
-                <TableRow key={`${g.key}-${e.nome}`}>
-                  <TableCell></TableCell>
-                  <TableCell className="pl-8 text-sm">{e.nome}</TableCell>
-                  <TableCell className={`text-right font-mono ${COL.previsao}`}>{fmtNum(e.previsao)}</TableCell>
-                  <TableCell className={`text-right font-mono ${COL.realizado}`}>{fmtNumDec(e.realizado)}</TableCell>
-                  <TableCell className={`text-right font-mono ${COL.saldo}`} style={{ color: saldoColor(e.saldo) }}>{fmtNumDec(e.saldo)}</TableCell>
-                  <TableCell className={`text-right font-mono ${COL.pct}`} style={{ color: realizadoColor(e.realizado, e.previsao) }}>{fmtPct(e.realizado, e.previsao)}</TableCell>
-                </TableRow>
-              ))}
-            </>
-          );
-        })}
-      </TableBody>
-    </Table>
+    <><div className="grid gap-3 lg:grid-cols-2">
+      <section className="flex h-[420px] min-w-0 flex-col border border-white/10 bg-white/[0.02]"><h3 className="border-b border-[#39FF14]/20 px-3 py-3 text-[10px] font-bold uppercase tracking-[0.22em] text-[#39FF14]">/ / Por produto</h3><div className="flex-1 overflow-auto"><Table className={cyberTableClass}><TableHeader><TableRow><TableHead>Produto</TableHead><TableHead className="text-right">Previsão</TableHead><TableHead className="text-right">Realizado</TableHead><TableHead className="text-right whitespace-nowrap">% Real.</TableHead><TableHead className="text-right">Empreendimentos</TableHead></TableRow></TableHeader><TableBody>{produtosRows.map((produto) => <Fragment key={produto.key}><TableRow className="cursor-pointer hover:bg-[#39FF14]/[0.04]" onClick={() => setProdutosAbertos((abertos) => ({ ...abertos, [produto.key]: !abertos[produto.key] }))}><TableCell className="max-w-[190px] font-medium text-[#39FF14]"><span className="mr-2 inline-block text-[9px]">{produtosAbertos[produto.key] ? "▼" : "▶"}</span>{produto.nome}</TableCell><TableCell className="text-right font-mono">{fmtNum(produto.previsao)}</TableCell><TableCell className="text-right font-mono">{fmtNumDec(produto.realizado)}</TableCell><TableCell className="text-right font-mono" style={{ color: realizadoColor(produto.realizado, produto.previsao) }}>{fmtPct(produto.realizado, produto.previsao)}</TableCell><TableCell className="text-right"><Button type="button" size="sm" variant="outline" className="h-7 rounded-none border-[#39FF14]/35 text-[8px] uppercase tracking-[0.12em] text-[#39FF14]" disabled={produto.realizado <= 0} onClick={(event) => { event.stopPropagation(); setProdutoEmpAberto(produto.key); }}>Ver produto</Button></TableCell></TableRow>{produtosAbertos[produto.key] && Array.from(produto.sups.entries()).sort(([a], [b]) => a.localeCompare(b, "pt-BR")).map(([supNome, sup]) => <TableRow key={`${produto.key}-${supNome}`} className="bg-white/[0.025]"><TableCell className="pl-7 text-[10px] font-bold uppercase tracking-[0.1em] text-white/65">{supNome}</TableCell><TableCell className="text-right font-mono text-xs">{fmtNum(sup.previsao)}</TableCell><TableCell className="text-right font-mono text-xs">{fmtNumDec(sup.realizado)}</TableCell><TableCell className="text-right font-mono text-xs" style={{ color: realizadoColor(sup.realizado, sup.previsao) }}>{fmtPct(sup.realizado, sup.previsao)}</TableCell><TableCell /></TableRow>)}</Fragment>)}</TableBody></Table></div></section>
+      <section className="flex h-[420px] min-w-0 flex-col border border-white/10 bg-white/[0.02]"><h3 className="border-b border-[#39FF14]/20 px-3 py-3 text-[10px] font-bold uppercase tracking-[0.22em] text-[#39FF14]">/ / Por gerente</h3><div className="flex-1 overflow-auto"><Table className={cyberTableClass}><Cabecalho /><TableBody>{[...gerentes].sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR")).map((gerente) => <TableRow key={gerente.nome}><TableCell className="max-w-[210px] truncate font-medium" title={`${gerente.nome} — ${gerente.sup || ""}`}><div>{gerente.nome}</div><div className="text-[8px] uppercase tracking-[0.1em] text-white/30">{gerente.sup || "—"}</div></TableCell><TableCell className="text-right font-mono">{fmtNum(gerente.previsao)}</TableCell><TableCell className="text-right font-mono">{fmtNumDec(gerente.realizado)}</TableCell><TableCell className="text-right font-mono" style={{ color: realizadoColor(gerente.realizado, gerente.previsao) }}>{fmtPct(gerente.realizado, gerente.previsao)}</TableCell></TableRow>)}</TableBody></Table></div></section>
+    </div><Dialog open={!!produtoEmpAberto} onOpenChange={(aberto) => !aberto && setProdutoEmpAberto(null)}><DialogContent className="max-w-lg rounded-none border border-[#39FF14]/40 bg-black/95 text-white shadow-[0_0_45px_rgba(57,255,20,0.14)] backdrop-blur-2xl"><DialogHeader><DialogTitle className="text-sm font-bold uppercase tracking-[0.2em] text-[#39FF14]">/ / {produtoSelecionado?.nome}</DialogTitle><DialogDescription className="text-white/40">Empreendimentos que tiveram venda realizada</DialogDescription></DialogHeader><div className="max-h-[55vh] overflow-auto border border-white/10"><Table className={cyberTableClass}><TableHeader><TableRow><TableHead>Empreendimento</TableHead><TableHead className="text-right">Vendas realizadas</TableHead></TableRow></TableHeader><TableBody>{Array.from(empreendimentosSelecionados.entries()).sort(([a], [b]) => a.localeCompare(b, "pt-BR")).map(([nome, realizado]) => <TableRow key={nome}><TableCell>{nome}</TableCell><TableCell className="text-right font-mono text-[#39FF14]">{fmtNumDec(realizado)}</TableCell></TableRow>)}</TableBody></Table></div></DialogContent></Dialog></>
   );
 }

@@ -18,7 +18,6 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { TIPOS_FORMULARIO, TIPOS_GASTO, type TipoFormulario, tipoLabel, destinacaoFromTipoGasto } from "@/lib/form-types";
 import { useHierarquia } from "@/hooks/useHierarquia";
 import { CyberBackdrop } from "@/components/CyberBackdrop";
-import { HeaderNavigationMenu } from "@/components/HeaderNavigationMenu";
 
 
 
@@ -587,20 +586,6 @@ function Dashboard() {
       }
     >
       {cyberAtivo && <CyberBackdrop />}
-      {cyberAtivo && (
-        <header className="sticky top-0 z-40 -mx-6 mb-8 grid h-16 grid-cols-[1fr_auto_1fr] items-center border-b border-[#39FF14]/25 bg-black/90 px-6 backdrop-blur-xl">
-          <div className="flex h-full items-center gap-2 self-center justify-self-start text-[11px] font-bold uppercase tracking-[0.28em] text-white/90">
-            <span className="flex h-7 w-7 items-center justify-center border border-[#39FF14] text-[11px] font-black text-[#39FF14]">G</span>
-            <span>GORRÃO <span className="text-[#39FF14]">/ /</span> LAB</span>
-          </div>
-          <h1 className="self-center justify-self-center text-xs font-bold leading-none uppercase tracking-[0.35em] text-[#39FF14]">
-            {tipoLabel(tipoAtivo).replace(/^\/\/\s*/, "")}
-          </h1>
-          <div className="flex h-full items-center self-center justify-self-end">
-            <HeaderNavigationMenu />
-          </div>
-        </header>
-      )}
       <div className={`relative z-30 ${tipoAtivo === "planejamento" || tipoAtivo === "gastos_pessoais" || cyberAtivo ? "flex flex-col gap-4" : "flex items-center justify-between"}`}>
         <div>
           {!cyberAtivo && (

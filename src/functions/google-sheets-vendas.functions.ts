@@ -37,6 +37,7 @@ async function assertAdmin(token: string) {
     .select("role")
     .eq("user_id", data.user.id);
   if (!roles?.some((row) => row.role === "admin")) throw new Error("Acesso negado");
+  return data.user.id;
 }
 
 function requiredEnv(name: string): string {
@@ -235,25 +236,27 @@ function resolveHierarchy<T extends Pick<VendaSheet, "diretor" | "superintendent
 
 async function reapplyHierarchyLinks() {
   const maps = await hierarchyMaps();
-  const { data: vendas, error } = await (supabaseAdmin as any)
-    .from("vendas_salesforce")
-    .select("id, diretor, superintendente, gerente");
-  if (error) throw new Error(error.message);
-  const resolved = (vendas ?? []).map((row: any) => resolveHierarchy(row, maps));
-  for (let start = 0; start < resolved.length; start += 50) {
-    await Promise.all(
-      resolved.slice(start, start + 50).map(async (row: any) => {
-        const { error: updateError } = await (supabaseAdmin as any)
-          .from("vendas_salesforce")
-          .update({
-            diretor_profile_id: row.diretor_profile_id,
-            superintendente_profile_id: row.superintendente_profile_id,
-            gerente_id: row.gerente_id,
-          })
-          .eq("id", row.id);
-        if (updateError) throw new Error(updateError.message);
-      }),
-    );
+  for (const table of ["vendas_salesforce", "pastas_salesforce_pv"]) {
+    const { data: sourceRows, error } = await (supabaseAdmin as any)
+      .from(table)
+      .select("id, diretor, superintendente, gerente");
+    if (error) throw new Error(error.message);
+    const resolved = (sourceRows ?? []).map((row: any) => resolveHierarchy(row, maps));
+    for (let start = 0; start < resolved.length; start += 50) {
+      await Promise.all(
+        resolved.slice(start, start + 50).map(async (row: any) => {
+          const { error: updateError } = await (supabaseAdmin as any)
+            .from(table)
+            .update({
+              diretor_profile_id: row.diretor_profile_id,
+              superintendente_profile_id: row.superintendente_profile_id,
+              gerente_id: row.gerente_id,
+            })
+            .eq("id", row.id);
+          if (updateError) throw new Error(updateError.message);
+        }),
+      );
+    }
   }
 }
 
@@ -332,23 +335,29 @@ export const vendasHierarchyList = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) => TokenInput.parse(input))
   .handler(async ({ data }) => {
     await assertAdmin(data.token);
-    const [{ data: vendas }, { data: aliases }, { data: profiles }, { data: gerentes }] =
-      await Promise.all([
-        (supabaseAdmin as any)
-          .from("vendas_salesforce")
-          .select("diretor, superintendente, gerente"),
-        (supabaseAdmin as any)
-          .from("vendas_hierarquia_aliases")
-          .select("id, tipo, alias, alias_normalizado, profile_id, gerente_id"),
-        supabaseAdmin
-          .from("profiles")
-          .select("id, nome, email, cargo, diretor_id")
-          .in("cargo", ["diretor", "superintendente"]),
-        supabaseAdmin
-          .from("gerentes")
-          .select("id, nome, superintendente_id, ativo")
-          .eq("ativo", true),
-      ]);
+    const [
+      { data: vendas },
+      { data: pastas },
+      { data: aliases },
+      { data: profiles },
+      { data: gerentes },
+    ] = await Promise.all([
+      (supabaseAdmin as any).from("vendas_salesforce").select("diretor, superintendente, gerente"),
+      (supabaseAdmin as any)
+        .from("pastas_salesforce_pv")
+        .select("diretor, superintendente, gerente"),
+      (supabaseAdmin as any)
+        .from("vendas_hierarquia_aliases")
+        .select("id, tipo, alias, alias_normalizado, profile_id, gerente_id"),
+      supabaseAdmin
+        .from("profiles")
+        .select("id, nome, email, cargo, diretor_id")
+        .in("cargo", ["diretor", "superintendente"]),
+      supabaseAdmin
+        .from("gerentes")
+        .select("id, nome, superintendente_id, ativo")
+        .eq("ativo", true),
+    ]);
 
     const aliasByKey = new Map<string, any>();
     for (const row of aliases ?? []) {
@@ -365,8 +374,8 @@ export const vendasHierarchyList = createServerFn({ method: "POST" })
 
     const build = (tipo: HierarquiaTipo, field: HierarquiaTipo) => {
       const distinct = new Map<string, string>();
-      for (const venda of vendas ?? []) {
-        const raw = String(venda[field] ?? "").trim();
+      for (const source of [...(vendas ?? []), ...(pastas ?? [])]) {
+        const raw = String(source[field] ?? "").trim();
         const normalized = normalizeHierarchy(raw);
         if (raw && normalized && !distinct.has(normalized)) distinct.set(normalized, raw);
       }

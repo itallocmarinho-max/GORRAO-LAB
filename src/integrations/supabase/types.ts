@@ -675,6 +675,106 @@ export type Database = {
         }
         Relationships: []
       }
+      pastas_salesforce_ab: {
+        Row: {
+          ab_identificador: string
+          created_at: string
+          data_criacao: string | null
+          id: string
+          pv_chave: string
+          pv_identificador: string
+          sincronizado_em: string
+        }
+        Insert: {
+          ab_identificador: string
+          created_at?: string
+          data_criacao?: string | null
+          id?: string
+          pv_chave: string
+          pv_identificador: string
+          sincronizado_em?: string
+        }
+        Update: {
+          ab_identificador?: string
+          created_at?: string
+          data_criacao?: string | null
+          id?: string
+          pv_chave?: string
+          pv_identificador?: string
+          sincronizado_em?: string
+        }
+        Relationships: []
+      }
+      pastas_salesforce_pv: {
+        Row: {
+          created_at: string
+          data_criacao: string | null
+          diretor: string | null
+          diretor_profile_id: string | null
+          empreendimento: string | null
+          gerente: string | null
+          gerente_id: string | null
+          id: string
+          pv_chave: string
+          pv_identificador: string
+          sincronizado_em: string
+          superintendente: string | null
+          superintendente_profile_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          data_criacao?: string | null
+          diretor?: string | null
+          diretor_profile_id?: string | null
+          empreendimento?: string | null
+          gerente?: string | null
+          gerente_id?: string | null
+          id?: string
+          pv_chave: string
+          pv_identificador: string
+          sincronizado_em?: string
+          superintendente?: string | null
+          superintendente_profile_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          data_criacao?: string | null
+          diretor?: string | null
+          diretor_profile_id?: string | null
+          empreendimento?: string | null
+          gerente?: string | null
+          gerente_id?: string | null
+          id?: string
+          pv_chave?: string
+          pv_identificador?: string
+          sincronizado_em?: string
+          superintendente?: string | null
+          superintendente_profile_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pastas_salesforce_pv_diretor_profile_id_fkey"
+            columns: ["diretor_profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pastas_salesforce_pv_gerente_id_fkey"
+            columns: ["gerente_id"]
+            isOneToOne: false
+            referencedRelation: "gerentes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pastas_salesforce_pv_superintendente_profile_id_fkey"
+            columns: ["superintendente_profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       plantoes_mes: {
         Row: {
           ano: number
