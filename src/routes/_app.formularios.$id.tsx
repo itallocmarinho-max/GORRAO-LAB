@@ -1438,7 +1438,7 @@ function FormDetail() {
       <input ref={compInputRef} type="file" accept="image/*,application/pdf" className="hidden" onChange={handleFile} />
       <input ref={boletoInputRef} type="file" accept="image/*,application/pdf" className="hidden" onChange={handleFile} />
 
-      <Link to="/dashboard" search={{ tipo: form.tipo }} className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground">
+      <Link to="/dashboard" search={{ tipo: form.tipo }} className={`inline-flex items-center text-sm hover:text-foreground ${tipo === "planejamento" ? "w-fit border border-white/10 bg-black/45 px-3 py-2 text-[10px] uppercase tracking-[0.16em] text-white/45 transition hover:border-[#39FF14]/50 hover:text-[#39FF14]" : "text-muted-foreground"}`}>
         <ArrowLeft className="mr-1 h-4 w-4" /> Voltar
       </Link>
 
@@ -1504,7 +1504,7 @@ function FormDetail() {
         )}
       </div>
 
-      <div className="flex flex-wrap gap-2">
+      <div className={tipo === "planejamento" ? "flex flex-wrap items-center gap-2 border-y border-[#39FF14]/15 bg-black/35 py-3" : "flex flex-wrap gap-2"}>
         {tipo !== "contratacao" && !isValidated && form.status === "editando" && (canEdit || isDiretor) && (
           <Button variant="default" className={isCyber ? "rounded-none bg-black border border-orange-500 text-orange-400 hover:bg-orange-500/10 hover:text-orange-300 uppercase tracking-widest text-[11px]" : "bg-orange-600 hover:bg-orange-700"} onClick={() => updateStatus("finalizado")}>
             <Lock className="mr-1 h-4 w-4" /> Finalizado
@@ -1886,36 +1886,37 @@ function FormDetail() {
         const qtdCorretores = new Set(acelera.map((l) => l.nome_recebedor).filter(Boolean)).size;
         const qtdGerentesAce = new Set(acelera.map((l) => l.gerente).filter(Boolean)).size;
         const qtdSupAce = new Set(acelera.map((l) => l.superintendente).filter(Boolean)).size;
+        const qtdDiretoresAce = acelera.length > 0 && form.diretor ? 1 : 0;
         return (
-          <div className="order-1 space-y-6">
+          <div className="order-1 grid gap-4 lg:grid-cols-2">
             {/* -- Metas -- */}
-            <Card className="rounded-none border border-[#1e3a5f] bg-black/40 backdrop-blur-md">
-              <CardHeader className="pb-3">
+            <Card className="rounded-none border border-[#39FF14]/25 bg-black/55 text-white backdrop-blur-md">
+              <CardHeader className="border-b border-[#39FF14]/15 pb-3">
                 <div className="flex items-center gap-2">
                   <CardTitle className="text-sm font-semibold text-[#39FF14] uppercase tracking-[0.25em]">// RESUMO METAS</CardTitle>
                 </div>
               </CardHeader>
               <CardContent className="pt-0">
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                  <div className="rounded-none border border-[#39FF14]/40 bg-black/60 backdrop-blur-md p-4">
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <div className="rounded-none border border-white/10 bg-white/[0.025] p-4">
                     <div className="flex items-center gap-2 text-[10px] font-medium text-[#39FF14] uppercase tracking-widest">
                       Total Meta Gerente
                     </div>
                     <div className="mt-1 text-2xl font-bold text-gray-300">{totMetaGer.toLocaleString("pt-BR")}</div>
                   </div>
-                  <div className="rounded-none border border-[#39FF14]/40 bg-black/60 backdrop-blur-md p-4">
+                  <div className="rounded-none border border-white/10 bg-white/[0.025] p-4">
                     <div className="flex items-center gap-2 text-[10px] font-medium text-[#39FF14] uppercase tracking-widest">
                       Total Meta Sup.
                     </div>
                     <div className="mt-1 text-2xl font-bold text-gray-300">{totMetaSup.toLocaleString("pt-BR")}</div>
                   </div>
-                  <div className="rounded-none border border-[#39FF14]/40 bg-black/60 backdrop-blur-md p-4">
+                  <div className="rounded-none border border-white/10 bg-white/[0.025] p-4">
                     <div className="flex items-center gap-2 text-[10px] font-medium text-[#39FF14] uppercase tracking-widest">
                       Gerentes
                     </div>
                     <div className="mt-1 text-2xl font-bold text-gray-300">{gerentes}</div>
                   </div>
-                  <div className="rounded-none border border-[#39FF14]/40 bg-black/60 backdrop-blur-md p-4">
+                  <div className="rounded-none border border-white/10 bg-white/[0.025] p-4">
                     <div className="flex items-center gap-2 text-[10px] font-medium text-[#39FF14] uppercase tracking-widest">
                       Plantões
                     </div>
@@ -1926,33 +1927,33 @@ function FormDetail() {
             </Card>
 
             {/* -- Verbas -- */}
-            <Card className="rounded-none border border-[#1e3a5f] bg-black/40 backdrop-blur-md">
-              <CardHeader className="pb-3">
+            <Card className="rounded-none border border-[#39FF14]/25 bg-black/55 text-white backdrop-blur-md">
+              <CardHeader className="border-b border-[#39FF14]/15 pb-3">
                 <div className="flex items-center gap-2">
                   <CardTitle className="text-sm font-semibold text-[#39FF14] uppercase tracking-[0.25em]">// RESUMO VERBAS</CardTitle>
                 </div>
               </CardHeader>
               <CardContent className="pt-0">
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                  <div className="rounded-none border border-[#39FF14]/40 bg-black/60 backdrop-blur-md p-4">
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <div className="rounded-none border border-white/10 bg-white/[0.025] p-4">
                     <div className="flex items-center gap-2 text-[10px] font-medium text-[#39FF14] uppercase tracking-widest">
                       Verba Cury
                     </div>
                     <div className="mt-1 text-2xl font-bold text-gray-300">{brl(totVerbaCury)}</div>
                   </div>
-                  <div className="rounded-none border border-[#39FF14]/40 bg-black/60 backdrop-blur-md p-4">
+                  <div className="rounded-none border border-white/10 bg-white/[0.025] p-4">
                     <div className="flex items-center gap-2 text-[10px] font-medium text-[#39FF14] uppercase tracking-widest">
                       Verba Gerente
                     </div>
                     <div className="mt-1 text-2xl font-bold text-gray-300">{brl(totVerbaGer)}</div>
                   </div>
-                  <div className="rounded-none border border-[#39FF14]/40 bg-black/60 backdrop-blur-md p-4">
+                  <div className="rounded-none border border-white/10 bg-white/[0.025] p-4">
                     <div className="flex items-center gap-2 text-[10px] font-medium text-[#39FF14] uppercase tracking-widest">
                       Verba Sup.
                     </div>
                     <div className="mt-1 text-2xl font-bold text-gray-300">{brl(totVerbaSup)}</div>
                   </div>
-                  <div className="rounded-none border border-[#39FF14]/40 bg-black/60 backdrop-blur-md p-4">
+                  <div className="rounded-none border border-[#39FF14]/30 bg-[#39FF14]/[0.035] p-4">
                     <div className="flex items-center gap-2 text-[10px] font-medium text-[#39FF14] uppercase tracking-widest">
                       Total Verba
                     </div>
@@ -1963,53 +1964,37 @@ function FormDetail() {
             </Card>
 
             {/* -- Acelera Vendas -- */}
-            <Card className="rounded-none border border-[#1e3a5f] bg-black/40 backdrop-blur-md">
-              <CardHeader className="pb-3">
+            <Card className="rounded-none border border-[#39FF14]/25 bg-black/55 text-white backdrop-blur-md lg:col-span-2">
+              <CardHeader className="border-b border-[#39FF14]/15 pb-3">
                 <div className="flex items-center gap-2">
                   <CardTitle className="text-sm font-semibold text-[#39FF14] uppercase tracking-[0.25em]">// RESUMO ACELERA VENDAS</CardTitle>
                 </div>
               </CardHeader>
               <CardContent className="pt-0 space-y-4">
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-                  <div className="rounded-none border border-[#39FF14]/40 bg-black/60 backdrop-blur-md p-4">
-                    <div className="flex items-center gap-2 text-[10px] font-medium text-[#39FF14] uppercase tracking-widest">
-                      Total Corretores
-                    </div>
-                    <div className="mt-1 text-2xl font-bold text-gray-300">{brl(totAceleraCor)}</div>
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                  <div className="rounded-none border border-white/10 bg-white/[0.025] p-4">
+                    <div className="text-[10px] font-medium uppercase tracking-widest text-[#39FF14]">Corretores</div>
+                    <div className="mt-3 text-[9px] uppercase tracking-widest text-white/35">Participantes</div><div className="mt-1 font-mono text-xl font-bold text-white">{qtdCorretores}</div>
+                    <div className="mt-3 text-[9px] uppercase tracking-widest text-white/35">Valor</div><div className="mt-1 font-mono text-base font-bold text-white">{brl(totAceleraCor)}</div>
                   </div>
-                  <div className="rounded-none border border-[#39FF14]/40 bg-black/60 backdrop-blur-md p-4">
-                    <div className="flex items-center gap-2 text-[10px] font-medium text-[#39FF14] uppercase tracking-widest">
-                      Total Gerente
-                    </div>
-                    <div className="mt-1 text-2xl font-bold text-gray-300">{brl(totAceleraGer)}</div>
+                  <div className="rounded-none border border-white/10 bg-white/[0.025] p-4">
+                    <div className="text-[10px] font-medium uppercase tracking-widest text-[#39FF14]">Gerente</div>
+                    <div className="mt-3 text-[9px] uppercase tracking-widest text-white/35">Participantes</div><div className="mt-1 font-mono text-xl font-bold text-white">{qtdGerentesAce}</div>
+                    <div className="mt-3 text-[9px] uppercase tracking-widest text-white/35">Valor</div><div className="mt-1 font-mono text-base font-bold text-white">{brl(totAceleraGer)}</div>
                   </div>
-                  <div className="rounded-none border border-[#39FF14]/40 bg-black/60 backdrop-blur-md p-4">
-                    <div className="flex items-center gap-2 text-[10px] font-medium text-[#39FF14] uppercase tracking-widest">
-                      Total Sup.
-                    </div>
-                    <div className="mt-1 text-2xl font-bold text-gray-300">{brl(totAceleraSup)}</div>
+                  <div className="rounded-none border border-white/10 bg-white/[0.025] p-4">
+                    <div className="text-[10px] font-medium uppercase tracking-widest text-[#39FF14]">SUP</div>
+                    <div className="mt-3 text-[9px] uppercase tracking-widest text-white/35">Participantes</div><div className="mt-1 font-mono text-xl font-bold text-white">{qtdSupAce}</div>
+                    <div className="mt-3 text-[9px] uppercase tracking-widest text-white/35">Valor</div><div className="mt-1 font-mono text-base font-bold text-white">{brl(totAceleraSup)}</div>
                   </div>
-                  <div className="rounded-none border border-[#39FF14]/40 bg-black/60 backdrop-blur-md p-4">
-                    <div className="flex items-center gap-2 text-[10px] font-medium text-[#39FF14] uppercase tracking-widest">
-                      Total Diretor
-                    </div>
-                    <div className="mt-1 text-2xl font-bold text-gray-300">{brl(totAceleraDir)}</div>
+                  <div className="rounded-none border border-white/10 bg-white/[0.025] p-4">
+                    <div className="text-[10px] font-medium uppercase tracking-widest text-[#39FF14]">Diretor</div>
+                    <div className="mt-3 text-[9px] uppercase tracking-widest text-white/35">Participantes</div><div className="mt-1 font-mono text-xl font-bold text-white">{qtdDiretoresAce}</div>
+                    <div className="mt-3 text-[9px] uppercase tracking-widest text-white/35">Valor</div><div className="mt-1 font-mono text-base font-bold text-white">{brl(totAceleraDir)}</div>
                   </div>
-                  <div className="rounded-none border border-[#39FF14]/40 bg-black/60 backdrop-blur-md p-4">
-                    <div className="flex items-center gap-2 text-[10px] font-medium text-[#39FF14] uppercase tracking-widest">
-                      Total Investido
-                    </div>
-                    <div className="mt-1 text-2xl font-bold text-gray-300">{brl(totAceleraInv)}</div>
-                  </div>
-                </div>
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  <div className="rounded-none border border-[#39FF14]/40 bg-black/60 backdrop-blur-md p-4">
-                    <div className="text-[10px] font-medium text-[#39FF14] uppercase tracking-widest">Corretores participantes</div>
-                    <div className="mt-1 text-2xl font-bold text-gray-300">{qtdCorretores}</div>
-                  </div>
-                  <div className="rounded-none border border-[#39FF14]/40 bg-black/60 backdrop-blur-md p-4">
-                    <div className="text-[10px] font-medium text-[#39FF14] uppercase tracking-widest">Gerentes (participantes)</div>
-                    <div className="mt-1 text-2xl font-bold text-gray-300">{qtdGerentesAce}</div>
+                  <div className="flex flex-col justify-center rounded-none border border-[#39FF14]/30 bg-[#39FF14]/[0.035] p-4">
+                    <div className="text-[10px] font-medium uppercase tracking-widest text-[#39FF14]">Total Investido</div>
+                    <div className="mt-3 font-mono text-xl font-bold text-[#39FF14]">{brl(totAceleraInv)}</div>
                   </div>
                 </div>
               </CardContent>

@@ -14,7 +14,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Upload, RefreshCw, Trash2, ChevronRight, Check, Plus, Pencil, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
+import { Upload, RefreshCw, Trash2, ChevronRight, Check, Plus, Pencil, ArrowUpDown, ArrowUp, ArrowDown, X } from "lucide-react";
 import { vendasBulkImport, vendasList, vendasBatchesList, vendasBatchDelete, vendasHierarquiaList, previsaoSupsList, previsaoCreate, previsaoCreateBulk, previsaoGerentesList, previsaoDelete, previsaoUpdate, produtosPrevisaoList, produtoAliasesSugerir, produtoPrevisaoCreate, produtoPrevisaoDelete, produtoPrevisaoToggleAtivo, produtoAliasUpsert, previsaoGroupGet, previsaoGroupUpsert, produtoSolicitar } from "@/functions/vendas.functions";
 import { hierarquiaAliasUpsert, hierarquiaAliasDelete } from "@/functions/leads.functions";
 import { fmtDateTime } from "@/lib/format";
@@ -216,6 +216,17 @@ function PrevisaoPage() {
   const [dataIni, setDataIni] = useState<string>("");
   const [dataFim, setDataFim] = useState<string>("");
   const [viewVendas, setViewVendas] = useState<"emp" | "ger">("emp");
+  const [supSemanasAberto, setSupSemanasAberto] = useState<string | null>(null);
+  const [filtrosAbertos, setFiltrosAbertos] = useState(false);
+  const filtrosRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const fechar = (event: MouseEvent) => {
+      if (filtrosRef.current && !filtrosRef.current.contains(event.target as Node)) setFiltrosAbertos(false);
+    };
+    document.addEventListener("mousedown", fechar);
+    return () => document.removeEventListener("mousedown", fechar);
+  }, []);
 
   async function reload() {
     if (!token) return;
@@ -376,23 +387,34 @@ function PrevisaoPage() {
   return (
     <div className="space-y-8">
       <div className="flex items-center justify-end gap-2 flex-wrap">
-        {canEdit && <NovaPrevisaoDialog token={token} onDone={reload} />}
-        <Button size="sm" className={cyberBtnGhost} onClick={reload} disabled={loading}>
-          <RefreshCw className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`} /> Atualizar
-        </Button>
+        {canEdit && <NovaPrevisaoDialog token={token} onDone={reload} isAdmin={isAdmin} />}
+        <div ref={filtrosRef} className="relative">
+          <Button size="sm" className={cyberBtnGhost} onClick={() => setFiltrosAbertos((aberto) => !aberto)}>
+            <span className="mr-2 text-[#39FF14]">{filtrosAbertos ? "X" : "/ /"}</span> Filtro
+          </Button>
+          <div className={`absolute right-0 top-[calc(100%+10px)] z-50 w-[min(90vw,340px)] space-y-3 border border-[#39FF14]/35 bg-black/95 p-4 shadow-[0_0_40px_rgba(57,255,20,0.14)] backdrop-blur-2xl transition-all ${filtrosAbertos ? "visible translate-y-0 opacity-100" : "invisible -translate-y-2 opacity-0"}`}>
+            <div className="border-b border-[#39FF14]/20 pb-2 text-[9px] uppercase tracking-[0.25em] text-white/40">/ / FILTROS</div>
+            <div className="space-y-1">
+              <Label className="text-[9px] uppercase tracking-[0.16em] text-white/45">Superintendente</Label>
+              <Select value={supFilter} onValueChange={(v) => { setSupFilter(v); setGerFilter(ALL); setCorFilter(ALL); }}><SelectTrigger className="rounded-none border-[#39FF14]/30 bg-black text-white"><SelectValue /></SelectTrigger><SelectContent className="rounded-none border-[#39FF14]/30 bg-black text-white"><SelectItem value={ALL}>Todos</SelectItem>{sups.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent></Select>
+            </div>
+            <div className="space-y-1"><Label className="text-[9px] uppercase tracking-[0.16em] text-white/45">Gerente</Label><Select value={gerFilter} onValueChange={(v) => { setGerFilter(v); setCorFilter(ALL); }}><SelectTrigger className="rounded-none border-[#39FF14]/30 bg-black text-white"><SelectValue /></SelectTrigger><SelectContent className="rounded-none border-[#39FF14]/30 bg-black text-white"><SelectItem value={ALL}>Todos</SelectItem>{gers.map((g) => <SelectItem key={g} value={g}>{g}</SelectItem>)}</SelectContent></Select></div>
+            <div className="space-y-1"><Label className="text-[9px] uppercase tracking-[0.16em] text-white/45">Corretor</Label><Select value={corFilter} onValueChange={setCorFilter}><SelectTrigger className="rounded-none border-[#39FF14]/30 bg-black text-white"><SelectValue /></SelectTrigger><SelectContent className="rounded-none border-[#39FF14]/30 bg-black text-white"><SelectItem value={ALL}>Todos</SelectItem>{corretores.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent></Select></div>
+            <div className="grid grid-cols-2 gap-2"><div className="space-y-1"><Label className="text-[9px] uppercase tracking-[0.12em] text-white/45">Data inicial</Label><Input type="date" value={dataIni} onChange={(e) => setDataIni(e.target.value)} className="rounded-none border-[#39FF14]/30 bg-black text-white [color-scheme:dark]" /></div><div className="space-y-1"><Label className="text-[9px] uppercase tracking-[0.12em] text-white/45">Data final</Label><Input type="date" value={dataFim} onChange={(e) => setDataFim(e.target.value)} className="rounded-none border-[#39FF14]/30 bg-black text-white [color-scheme:dark]" /></div></div>
+            <Button className={`${cyberBtnGhost} w-full`} onClick={() => { setSupFilter(ALL); setGerFilter(ALL); setCorFilter(ALL); setDataIni(""); setDataFim(""); }}>Limpar filtros</Button>
+          </div>
+        </div>
       </div>
 
       <Tabs defaultValue="resumo" className="space-y-4">
         <TabsList className="rounded-none border border-[#39FF14]/30 bg-black/60 backdrop-blur-md p-1 h-auto">
           <TabsTrigger value="resumo" className="rounded-none uppercase tracking-[0.25em] text-[10px] data-[state=active]:bg-[#39FF14] data-[state=active]:text-black text-gray-400">Resumo</TabsTrigger>
-          {isAdmin && <TabsTrigger value="importar" className="rounded-none uppercase tracking-[0.25em] text-[10px] data-[state=active]:bg-[#39FF14] data-[state=active]:text-black text-gray-400">Importar</TabsTrigger>}
-          {isAdmin && <TabsTrigger value="bases" className="rounded-none uppercase tracking-[0.25em] text-[10px] data-[state=active]:bg-[#39FF14] data-[state=active]:text-black text-gray-400">Bases importadas</TabsTrigger>}
           {isAdmin && <TabsTrigger value="vinculo" className="rounded-none uppercase tracking-[0.25em] text-[10px] data-[state=active]:bg-[#39FF14] data-[state=active]:text-black text-gray-400">Vínculo</TabsTrigger>}
         </TabsList>
 
         <TabsContent value="resumo" className="space-y-6">
-          {/* Filtros */}
-          <Card className="rounded-none border-0 bg-transparent shadow-none backdrop-blur-0">
+          {/* Filtros movidos para o botão do cabeçalho da página */}
+          {false && <Card className="rounded-none border-0 bg-transparent shadow-none backdrop-blur-0">
             <CardHeader><CardTitle className={cyberTableTitle}>// FILTROS</CardTitle></CardHeader>
             <CardContent className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
               <div className="space-y-1">
@@ -437,7 +459,7 @@ function PrevisaoPage() {
                 <Button variant="ghost" size="sm" onClick={() => { setSupFilter(ALL); setGerFilter(ALL); setCorFilter(ALL); setDataIni(""); setDataFim(""); }}>Limpar filtros</Button>
               </div>
             </CardContent>
-          </Card>
+          </Card>}
 
           {/* Resumo */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -459,7 +481,25 @@ function PrevisaoPage() {
           </div>
 
       {/* Tabela superintendentes -> gerentes */}
-      <Card className={cyberTableCard}>
+      <section className="border border-[#39FF14]/25 bg-black/55 p-4 backdrop-blur-md">
+        <div className="mb-3 flex items-center justify-between border-b border-[#39FF14]/15 pb-3"><h2 className={cyberTableTitle}>/ / SUPERINTENDENTES</h2><span className="text-[8px] uppercase tracking-[0.16em] text-white/30">Clique para filtrar os lançamentos</span></div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+          {[...tabelaSup].sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR")).map((sup) => (
+            <button key={sup.nome} type="button" onClick={() => setSupSemanasAberto(sup.nome)} className="min-w-0 border border-white/10 bg-white/[0.025] p-3 text-left transition hover:border-[#39FF14]/70 hover:bg-[#39FF14]/[0.035]">
+              <div className="truncate border-b border-white/10 pb-2 text-xs font-bold uppercase tracking-[0.16em] text-[#39FF14]" title={sup.nome}>{sup.nome}</div>
+              <div className="mt-3 space-y-2 text-[10px] uppercase tracking-[0.1em]">
+                <div className="flex justify-between gap-2"><span className="text-white/45">Previsão</span><strong className="font-mono text-white">{fmtNum(sup.previsao)}</strong></div>
+                <div className="flex justify-between gap-2"><span className="text-white/45">Realizado</span><strong className="font-mono" style={{ color: realizadoColor(sup.realizado, sup.previsao) }}>{fmtNumDec(sup.realizado)}</strong></div>
+                <div className="flex justify-between gap-2"><span className="text-white/45">% realizado</span><strong className="font-mono" style={{ color: realizadoColor(sup.realizado, sup.previsao) }}>{fmtPct(sup.realizado, sup.previsao)}</strong></div>
+                <div className="flex justify-between gap-2 border-t border-white/10 pt-2"><span className="text-white/45">Saldo</span><strong className="font-mono" style={{ color: saldoColor(sup.saldo) }}>{fmtNumDec(sup.saldo)}</strong></div>
+              </div>
+            </button>
+          ))}
+          {tabelaSupSorted.length === 0 && <div className="border border-dashed border-white/10 p-6 text-center text-[10px] uppercase tracking-widest text-white/35 xl:col-span-6">Sem dados para os filtros selecionados</div>}
+        </div>
+      </section>
+
+      {false && <Card className={cyberTableCard}>
         <CardHeader><CardTitle className={cyberTableTitle}>// SUPERINTENDENTES & GERENTES</CardTitle></CardHeader>
         <CardContent>
           {tabelaSup.length === 0 ? (
@@ -484,7 +524,7 @@ function PrevisaoPage() {
             </Table>
           )}
         </CardContent>
-      </Card>
+      </Card>}
 
       {/* Tabela vendas (toggle) */}
       <Card className={cyberTableCard}>
@@ -551,26 +591,8 @@ function PrevisaoPage() {
         </CardContent>
       </Card>
 
-      {/* Previsões lançadas */}
-      <PrevisoesLancadasCard
-        token={token}
-        isAdmin={canEdit}
-        previsoes={previsoesF}
-        onChange={reload}
-      />
+      <SupSemanasDialog open={!!supSemanasAberto} onOpenChange={(aberto) => !aberto && setSupSemanasAberto(null)} superintendente={supSemanasAberto} previsoes={previsoesF} produtos={produtos} token={token} canEdit={canEdit} onChange={reload} />
         </TabsContent>
-
-        {isAdmin && (
-          <TabsContent value="importar">
-            <ImportarTab token={token} onDone={reload} />
-          </TabsContent>
-        )}
-
-        {isAdmin && (
-          <TabsContent value="bases">
-            <BatchesTab token={token} onDone={reload} />
-          </TabsContent>
-        )}
 
         {isAdmin && (
           <TabsContent value="vinculo">
@@ -953,15 +975,13 @@ function weeksOfMonth(year: number, month1: number): { ini: string; fim: string 
   return weeks;
 }
 
-function NovaPrevisaoDialog({ token, onDone }: { token: string; onDone: () => void }) {
+function NovaPrevisaoDialog({ token, onDone, isAdmin }: { token: string; onDone: () => void; isAdmin: boolean }) {
   const now = new Date();
   const [open, setOpen] = useState(false);
   const [sups, setSups] = useState<{ id: string; nome: string }[]>([]);
   const [supId, setSupId] = useState<string>("");
-  const [gerentes, setGerentes] = useState<{ id: string; nome: string }[]>([]);
-  const [quantPorGer, setQuantPorGer] = useState<Record<string, string>>({});
-  const [totalSup, setTotalSup] = useState<string>("");
-  const [loadingGer, setLoadingGer] = useState(false);
+  const [produtosDisponiveis, setProdutosDisponiveis] = useState<ProdutoLite[]>([]);
+  const [linhasProdutos, setLinhasProdutos] = useState<Array<{ id: string; produtoId: string; quantidade: string }>>([{ id: crypto.randomUUID(), produtoId: "", quantidade: "" }]);
   const [ano, setAno] = useState<number>(now.getFullYear());
   const [mes, setMes] = useState<number>(now.getMonth() + 1);
   const [semanaIdx, setSemanaIdx] = useState<string>("0");
@@ -988,45 +1008,36 @@ function NovaPrevisaoDialog({ token, onDone }: { token: string; onDone: () => vo
   }, [open, token, mes, ano, supId]);
 
   useEffect(() => {
-    if (!supId || !token) { setGerentes([]); setQuantPorGer({}); return; }
+    if (!open || !token) return;
     (async () => {
-      setLoadingGer(true);
       try {
-        const r = (await previsaoGerentesList({ data: { token, superintendente_id: supId, mes_referencia: mes, ano_referencia: ano } })) as { id: string; nome: string }[];
-        setGerentes(r);
-        setQuantPorGer({});
+        const r = (await produtosPrevisaoList({ data: { token } })) as Array<ProdutoLite & { aliases?: unknown[] }>;
+        setProdutosDisponiveis(r.filter((produto) => produto.ativo));
       } catch (e: any) {
-        toast.error(e?.message ?? "Erro ao carregar gerentes");
-      } finally {
-        setLoadingGer(false);
+        toast.error(e?.message ?? "Erro ao carregar produtos");
       }
     })();
-  }, [supId, token, mes, ano]);
+  }, [open, token]);
 
   const supNome = sups.find((s) => s.id === supId)?.nome ?? "";
 
   const totalUnidades = useMemo(() => {
     let t = 0;
-    for (const v of Object.values(quantPorGer)) t += parseNumber(v);
+    for (const linha of linhasProdutos) t += parseNumber(linha.quantidade);
     return t;
-  }, [quantPorGer]);
-  const gerentesPreenchidos = useMemo(() => {
-    let n = 0;
-    for (const v of Object.values(quantPorGer)) if (parseNumber(v) > 0) n += 1;
-    return n;
-  }, [quantPorGer]);
+  }, [linhasProdutos]);
+  const produtosPreenchidos = linhasProdutos.filter((linha) => linha.produtoId && parseNumber(linha.quantidade) > 0).length;
 
   async function salvar() {
     const idx = parseInt(semanaIdx, 10);
     const w = semanas[idx];
     if (!supNome) { toast.error("Selecione o superintendente"); return; }
     if (!w) { toast.error("Selecione a semana"); return; }
-    const itens = gerentes
-      .map((g) => ({ gerente: g.nome, preciso_vendas: parseNumber(quantPorGer[g.id] ?? "") }))
-      .filter((it) => it.preciso_vendas > 0);
-    const totalSupNum = parseNumber(totalSup);
-    if (!itens.length && totalSupNum <= 0) {
-      toast.error("Informe um total para a superintendência ou ao menos um gerente");
+    const itens = linhasProdutos
+      .filter((linha) => linha.produtoId && parseNumber(linha.quantidade) > 0)
+      .map((linha) => ({ produto_id: linha.produtoId, preciso_vendas: parseNumber(linha.quantidade) }));
+    if (!itens.length) {
+      toast.error("Selecione ao menos um produto e informe sua quantidade");
       return;
     }
     setSaving(true);
@@ -1040,18 +1051,10 @@ function NovaPrevisaoDialog({ token, onDone }: { token: string; onDone: () => vo
         semana_fim: w.fim,
         observacao: observacao.trim() || null,
       };
-      let msg = "";
-      if (totalSupNum > 0) {
-        await previsaoCreate({ data: { ...base, preciso_vendas: totalSupNum } });
-        msg += `Total da superintendência: ${fmtNum(totalSupNum)} un. `;
-      }
-      if (itens.length) {
-        await previsaoCreateBulk({ data: { ...base, itens } });
-        msg += `${itens.length} previsões por gerente (${fmtNum(itens.reduce((a, b) => a + b.preciso_vendas, 0))} un.)`;
-      }
-      toast.success(msg.trim() || "Previsão salva");
+      await previsaoCreateBulk({ data: { ...base, itens } });
+      toast.success(`${itens.length} produto(s) salvo(s) — ${fmtNum(totalUnidades)} venda(s) previstas`);
       setOpen(false);
-      setQuantPorGer({}); setTotalSup(""); setObservacao(""); setSupId("");
+      setLinhasProdutos([{ id: crypto.randomUUID(), produtoId: "", quantidade: "" }]); setObservacao(""); setSupId("");
       onDone();
     } catch (e: any) {
       toast.error(e?.message ?? "Falha ao salvar");
@@ -1062,41 +1065,29 @@ function NovaPrevisaoDialog({ token, onDone }: { token: string; onDone: () => vo
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <Button size="sm" onClick={() => setOpen(true)}>
+      <Button size="sm" className="rounded-none border border-[#39FF14] bg-[#39FF14] font-bold uppercase tracking-[0.14em] text-black hover:bg-[#39FF14]/85" onClick={() => setOpen(true)}>
         <Plus className="h-4 w-4 mr-2" /> Nova previsão
       </Button>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto rounded-none border border-[#39FF14]/40 bg-black/95 text-white shadow-[0_0_45px_rgba(57,255,20,0.14)] backdrop-blur-2xl">
         <DialogHeader>
-          <DialogTitle>Adicionar previsão (em massa)</DialogTitle>
-          <DialogDescription>Lance a previsão de vendas por gerente para uma semana do mês.</DialogDescription>
+          <DialogTitle className="text-sm font-bold uppercase tracking-[0.24em] text-[#39FF14]">/ / NOVA PREVISÃO</DialogTitle>
+          <DialogDescription className="text-[10px] uppercase tracking-[0.12em] text-white/40">Lance a previsão de vendas por gerente para uma semana do mês.</DialogDescription>
         </DialogHeader>
         {/* Resumo no topo */}
-        <div className="flex flex-wrap gap-2 rounded-md border bg-muted/30 p-3">
+        <div className="grid grid-cols-2 gap-2 border border-[#39FF14]/20 bg-[#39FF14]/[0.025] p-3 sm:grid-cols-4">
           <Badge variant="outline" className="text-xs px-2 py-1">
             Superintendente: <span className="ml-1 font-medium">{supNome || "—"}</span>
           </Badge>
           <Badge variant="outline" className="text-xs px-2 py-1">
             Semana: <span className="ml-1 font-medium">{semanas[parseInt(semanaIdx, 10)] ? `${fmtDateBR(semanas[parseInt(semanaIdx, 10)].ini)} a ${fmtDateBR(semanas[parseInt(semanaIdx, 10)].fim)}` : "—"}</span>
           </Badge>
-          <Badge variant="outline" className="text-xs px-2 py-1 border-blue-500/40 bg-blue-500/10 text-blue-700 dark:text-blue-300">
-            Gerentes preenchidos: <span className="ml-1 font-mono">{gerentesPreenchidos}/{gerentes.length}</span>
+          <Badge variant="outline" className="text-xs px-2 py-1 border-[#39FF14]/30 bg-[#39FF14]/5 text-[#39FF14]">
+            Produtos: <span className="ml-1 font-mono">{produtosPreenchidos}</span>
           </Badge>
           <Badge variant="outline" className="text-xs px-2 py-1 border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">
             Total previsto: <span className="ml-1 font-mono">{fmtNum(totalUnidades)}</span>
           </Badge>
         </div>
-        {(() => {
-          const tSup = parseNumber(totalSup);
-          if (tSup <= 0 || gerentesPreenchidos === 0) return null;
-          const diff = tSup - totalUnidades;
-          if (diff === 0) return null;
-          return (
-            <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
-              ⚠ O total da superintendência ({fmtNum(tSup)}) não bate com a soma dos gerentes ({fmtNum(totalUnidades)}).
-              {" "}Diferença: <span className="font-mono">{diff > 0 ? "+" : ""}{fmtNum(diff)}</span>.
-            </div>
-          );
-        })()}
         <div className="space-y-3">
           <div className="space-y-1">
             <Label className="text-xs">Superintendente</Label>
@@ -1141,46 +1132,31 @@ function NovaPrevisaoDialog({ token, onDone }: { token: string; onDone: () => vo
             </Select>
           </div>
           <div className="space-y-2">
-            <Label className="text-xs">Total da superintendência (opcional)</Label>
-            <Input
-              type="number"
-              inputMode="numeric"
-              min={0}
-              className="w-40 h-9"
-              value={totalSup}
-              onChange={(e) => setTotalSup(e.target.value)}
-              placeholder="0"
-            />
-            <p className="text-[11px] text-muted-foreground">
-              Use este campo para lançar a previsão total da superintendência sem detalhar por gerente. Pode ser combinado ou usado isoladamente.
-            </p>
-          </div>
-          <div className="space-y-2">
-            <Label className="text-xs">Quantidade prevista por gerente (opcional)</Label>
-            {!supId ? (
-              <p className="text-xs text-muted-foreground">Selecione um superintendente para listar seus gerentes.</p>
-            ) : loadingGer ? (
-              <p className="text-xs text-muted-foreground">Carregando gerentes...</p>
-            ) : gerentes.length === 0 ? (
-              <p className="text-xs text-muted-foreground">Nenhum gerente ativo cadastrado para este superintendente.</p>
-            ) : (
-              <div className="max-h-64 overflow-y-auto rounded-md border divide-y">
-                {gerentes.map((g) => (
-                  <div key={g.id} className="flex items-center gap-3 px-3 py-2">
-                    <div className="flex-1 text-sm truncate">{g.nome}</div>
+            <div className="flex items-center justify-between"><Label className="text-xs">Produtos e quantidade prevista</Label><Button type="button" size="sm" variant="outline" className="h-8 rounded-none border-[#39FF14]/35 text-[9px] uppercase tracking-[0.14em] text-[#39FF14]" onClick={() => setLinhasProdutos((linhas) => [...linhas, { id: crypto.randomUUID(), produtoId: "", quantidade: "" }])}><Plus className="mr-1 h-3 w-3" /> Produto</Button></div>
+              <div className="max-h-72 space-y-2 overflow-y-auto border border-white/10 p-2">
+                {linhasProdutos.map((linha, index) => (
+                  <div key={linha.id} className="grid grid-cols-[1fr_100px_32px] items-center gap-2 border border-white/10 bg-white/[0.025] p-2">
+                    <Select value={linha.produtoId} onValueChange={(produtoId) => setLinhasProdutos((linhas) => {
+                      const atualizadas = linhas.map((item) => item.id === linha.id ? { ...item, produtoId } : item);
+                      if (index === linhas.length - 1 && produtoId) atualizadas.push({ id: crypto.randomUUID(), produtoId: "", quantidade: "" });
+                      return atualizadas;
+                    })}>
+                      <SelectTrigger className="rounded-none border-[#39FF14]/25 bg-black"><SelectValue placeholder="Selecionar produto" /></SelectTrigger>
+                      <SelectContent className="rounded-none border-[#39FF14]/30 bg-black text-white">{produtosDisponiveis.filter((produto) => produto.id === linha.produtoId || !linhasProdutos.some((outra) => outra.produtoId === produto.id)).map((produto) => <SelectItem key={produto.id} value={produto.id}>{produto.nome}</SelectItem>)}</SelectContent>
+                    </Select>
                     <Input
                       type="number"
                       inputMode="numeric"
                       min={0}
-                      className="w-24 h-8"
-                      value={quantPorGer[g.id] ?? ""}
-                      onChange={(e) => setQuantPorGer((m) => ({ ...m, [g.id]: e.target.value }))}
+                      className="h-9 rounded-none border-[#39FF14]/25 bg-black"
+                      value={linha.quantidade}
+                      onChange={(e) => setLinhasProdutos((linhas) => linhas.map((item) => item.id === linha.id ? { ...item, quantidade: e.target.value } : item))}
                       placeholder="0"
                     />
+                    <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-white/35 hover:text-red-400" disabled={linhasProdutos.length === 1} onClick={() => setLinhasProdutos((linhas) => linhas.filter((item) => item.id !== linha.id))}><X className="h-3 w-3" /></Button>
                   </div>
                 ))}
               </div>
-            )}
           </div>
           <div className="space-y-1">
             <Label className="text-xs">Observação (opcional)</Label>
@@ -1189,19 +1165,19 @@ function NovaPrevisaoDialog({ token, onDone }: { token: string; onDone: () => vo
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={() => setOpen(false)} disabled={saving}>Cancelar</Button>
-          <Button onClick={salvar} disabled={saving || (gerentesPreenchidos === 0 && parseNumber(totalSup) <= 0)}>
+          <Button onClick={salvar} disabled={saving || produtosPreenchidos === 0}>
             {saving ? "Salvando..." : "Salvar"}
           </Button>
         </DialogFooter>
         <div className="border-t pt-3 mt-2">
-          <SolicitarProdutoInline token={token} />
+          <SolicitarProdutoInline token={token} isAdmin={isAdmin} onCreated={(produto) => setProdutosDisponiveis((atuais) => [...atuais, produto].sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR")))} />
         </div>
       </DialogContent>
     </Dialog>
   );
 }
 
-function SolicitarProdutoInline({ token }: { token: string }) {
+function SolicitarProdutoInline({ token, isAdmin = false, onCreated }: { token: string; isAdmin?: boolean; onCreated?: (produto: ProdutoLite) => void }) {
   const [nome, setNome] = useState("");
   const [just, setJust] = useState("");
   const [sending, setSending] = useState(false);
@@ -1209,6 +1185,13 @@ function SolicitarProdutoInline({ token }: { token: string }) {
     if (!nome.trim()) { toast.error("Informe o nome do produto"); return; }
     setSending(true);
     try {
+      if (isAdmin) {
+        const criado = (await produtoPrevisaoCreate({ data: { token, nome: nome.trim() } })) as { id: string };
+        onCreated?.({ id: criado.id, nome: nome.trim(), ativo: true });
+        toast.success("Produto criado e liberado para seleção");
+        setNome(""); setJust("");
+        return;
+      }
       const r = (await produtoSolicitar({ data: { token, nome: nome.trim(), justificativa: just.trim() || null } })) as any;
       if (r.already_exists) toast.success("Esse produto já existe e está disponível.");
       else if (r.already_requested) toast.message("Solicitação já enviada — aguardando aprovação do admin.");
@@ -1220,11 +1203,11 @@ function SolicitarProdutoInline({ token }: { token: string }) {
   }
   return (
     <details className="text-xs">
-      <summary className="cursor-pointer text-muted-foreground hover:text-foreground">+ Solicitar adição de novo produto (validação do admin)</summary>
+      <summary className="cursor-pointer text-muted-foreground hover:text-foreground">{isAdmin ? "+ Criar novo produto" : "+ Solicitar adição de novo produto (validação do admin)"}</summary>
       <div className="mt-2 space-y-2">
         <Input className="h-8" placeholder="Nome do produto" value={nome} onChange={(e) => setNome(e.target.value)} maxLength={200} />
-        <Input className="h-8" placeholder="Justificativa (opcional)" value={just} onChange={(e) => setJust(e.target.value)} maxLength={500} />
-        <Button size="sm" onClick={enviar} disabled={sending}>{sending ? "Enviando..." : "Enviar solicitação"}</Button>
+        {!isAdmin && <Input className="h-8" placeholder="Justificativa (opcional)" value={just} onChange={(e) => setJust(e.target.value)} maxLength={500} />}
+        <Button size="sm" onClick={enviar} disabled={sending}>{sending ? "Salvando..." : isAdmin ? "Criar produto" : "Enviar solicitação"}</Button>
       </div>
     </details>
   );
@@ -1670,6 +1653,55 @@ function GerAliasRowUI({ row, gerentes, profiles, busy, onSave, onRemove }: { ro
   );
 }
 
+function SupSemanasDialog({ open, onOpenChange, superintendente, previsoes, produtos, token, canEdit, onChange }: { open: boolean; onOpenChange: (open: boolean) => void; superintendente: string | null; previsoes: Previsao[]; produtos: ProdutoLite[]; token: string; canEdit: boolean; onChange: () => void }) {
+  const [semanaSelecionada, setSemanaSelecionada] = useState<string | null>(null);
+  const [linhas, setLinhas] = useState<Array<{ key: string; id?: string; produto_id: string; quantidade: string }>>([]);
+  const [idsRemovidos, setIdsRemovidos] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
+  const previsoesSup = previsoes.filter((previsao) => previsao.superintendente === superintendente);
+  const semanas = Array.from(new Map(previsoesSup.filter((p) => p.semana_inicio).map((p) => [p.semana_inicio!, p])).values()).sort((a, b) => (b.semana_inicio || "").localeCompare(a.semana_inicio || ""));
+  const produtoNome = new Map(produtos.map((produto) => [produto.id, produto.nome]));
+  const semanaBase = previsoesSup.find((previsao) => previsao.semana_inicio === semanaSelecionada);
+
+  const abrirSemana = (inicio: string) => {
+    const registros = previsoesSup.filter((previsao) => previsao.semana_inicio === inicio);
+    setSemanaSelecionada(inicio);
+    setIdsRemovidos([]);
+    setLinhas([...registros.map((registro) => ({ key: registro.id, id: registro.id, produto_id: registro.produto_id || "", quantidade: String(registro.preciso_vendas || 0) })), { key: crypto.randomUUID(), produto_id: "", quantidade: "" }]);
+  };
+
+  const salvar = async () => {
+    if (!superintendente || !semanaBase?.semana_inicio || !semanaBase.semana_fim) return;
+    const itens = linhas.filter((linha) => linha.produto_id && parseNumber(linha.quantidade) > 0).map((linha) => ({ id: linha.id || null, produto_id: linha.produto_id, gerente: null, preciso_vendas: parseNumber(linha.quantidade) }));
+    setSaving(true);
+    try {
+      await previsaoGroupUpsert({ data: { token, superintendente, semana_inicio_original: semanaBase.semana_inicio, semana_inicio: semanaBase.semana_inicio, semana_fim: semanaBase.semana_fim, mes_referencia: Number(semanaBase.semana_inicio.slice(5, 7)), ano_referencia: Number(semanaBase.semana_inicio.slice(0, 4)), observacao: semanaBase.observacao, delete_ids: idsRemovidos, itens } });
+      toast.success("Previsões da semana atualizadas");
+      setSemanaSelecionada(null);
+      await onChange();
+    } catch (e: any) { toast.error(e?.message ?? "Falha ao atualizar a semana"); }
+    finally { setSaving(false); }
+  };
+
+  return <Dialog open={open} onOpenChange={(aberto) => { onOpenChange(aberto); if (!aberto) setSemanaSelecionada(null); }}>
+    <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto rounded-none border border-[#39FF14]/40 bg-black/95 text-white shadow-[0_0_45px_rgba(57,255,20,0.14)] backdrop-blur-2xl">
+      <DialogHeader><DialogTitle className="text-sm font-bold uppercase tracking-[0.2em] text-[#39FF14]">/ / {superintendente}</DialogTitle><DialogDescription className="text-white/40">{semanaSelecionada ? "Edite os produtos e quantidades da semana" : "Selecione a semana que deseja abrir"}</DialogDescription></DialogHeader>
+      {!semanaSelecionada ? <div className="space-y-2">
+        {semanas.map((semana) => {
+          const registros = previsoesSup.filter((p) => p.semana_inicio === semana.semana_inicio);
+          const totalSemana = registros.reduce((total, registro) => total + Number(registro.preciso_vendas || 0), 0);
+          return <button key={semana.semana_inicio} type="button" onClick={() => abrirSemana(semana.semana_inicio!)} className="flex w-full items-center justify-between border border-white/10 bg-white/[0.025] p-3 text-left transition hover:border-[#39FF14]/60"><div><strong className="text-xs uppercase tracking-[0.14em] text-white">{fmtDateBR(semana.semana_inicio!)} a {semana.semana_fim ? fmtDateBR(semana.semana_fim) : "—"}</strong><div className="mt-1 text-[8px] uppercase tracking-[0.12em] text-white/35">{registros.length} produto(s)</div></div><span className="font-mono text-sm font-bold text-[#39FF14]">{fmtNum(totalSemana)}</span></button>;
+        })}
+        {semanas.length === 0 && <div className="border border-dashed border-white/10 p-6 text-center text-[10px] uppercase tracking-widest text-white/35">Nenhuma semana lançada</div>}
+      </div> : <div className="space-y-3">
+        <button type="button" className="text-[9px] uppercase tracking-[0.14em] text-white/40 hover:text-[#39FF14]" onClick={() => setSemanaSelecionada(null)}>← Voltar às semanas</button>
+        <div className="space-y-2">{linhas.map((linha, index) => <div key={linha.key} className="grid grid-cols-[1fr_100px_32px] gap-2 border border-white/10 bg-white/[0.025] p-2"><Select disabled={!canEdit} value={linha.produto_id} onValueChange={(produto_id) => setLinhas((atuais) => { const novas = atuais.map((item) => item.key === linha.key ? { ...item, produto_id } : item); if (index === atuais.length - 1 && produto_id) novas.push({ key: crypto.randomUUID(), produto_id: "", quantidade: "" }); return novas; })}><SelectTrigger className="rounded-none border-[#39FF14]/25 bg-black"><SelectValue placeholder="Selecionar produto" /></SelectTrigger><SelectContent className="rounded-none border-[#39FF14]/30 bg-black text-white">{produtos.filter((produto) => produto.ativo || produto.id === linha.produto_id).map((produto) => <SelectItem key={produto.id} value={produto.id}>{produto.nome}</SelectItem>)}</SelectContent></Select><Input disabled={!canEdit} type="number" min={0} value={linha.quantidade} onChange={(e) => setLinhas((atuais) => atuais.map((item) => item.key === linha.key ? { ...item, quantidade: e.target.value } : item))} className="rounded-none border-[#39FF14]/25 bg-black" /><Button disabled={!canEdit || linhas.length === 1} type="button" variant="ghost" size="icon" onClick={() => { if (linha.id) setIdsRemovidos((ids) => [...ids, linha.id!]); setLinhas((atuais) => atuais.filter((item) => item.key !== linha.key)); }}><X className="h-3 w-3" /></Button></div>)}</div>
+        {canEdit && <DialogFooter><Button variant="ghost" onClick={() => setSemanaSelecionada(null)}>Cancelar</Button><Button onClick={salvar} disabled={saving}>{saving ? "Salvando..." : "Salvar alterações"}</Button></DialogFooter>}
+      </div>}
+    </DialogContent>
+  </Dialog>;
+}
+
 // ============ Previsões lançadas (lista + editar + excluir) ============
 function PrevisoesLancadasCard({ token, isAdmin, previsoes, onChange }: { token: string; isAdmin: boolean; previsoes: Previsao[]; onChange: () => void }) {
   const [editing, setEditing] = useState<Previsao | null>(null);
@@ -1788,10 +1820,10 @@ function PrevisoesLancadasCard({ token, isAdmin, previsoes, onChange }: { token:
       </CardContent>
 
       <Dialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)}>
-        <DialogContent>
+        <DialogContent className="rounded-none border border-[#39FF14]/40 bg-black/95 text-white shadow-[0_0_45px_rgba(57,255,20,0.14)] backdrop-blur-2xl">
           <DialogHeader>
-            <DialogTitle>Editar previsão</DialogTitle>
-            <DialogDescription>
+            <DialogTitle className="text-sm font-bold uppercase tracking-[0.24em] text-[#39FF14]">/ / EDITAR PREVISÃO</DialogTitle>
+            <DialogDescription className="text-white/45">
               {editing?.superintendente ?? ""} {editing?.semana_inicio ? ` — ${fmtDateBR(editing.semana_inicio)}${editing.semana_fim ? ` a ${fmtDateBR(editing.semana_fim)}` : ""}` : ""}
             </DialogDescription>
           </DialogHeader>

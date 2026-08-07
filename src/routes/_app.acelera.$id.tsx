@@ -73,6 +73,8 @@ function AceleraDetail() {
   const [lancs, setLancs] = useState<Lancamento[]>([]);
   const [filtroGerente, setFiltroGerente] = useState<string>("todos");
   const [filtroEtapa, setFiltroEtapa] = useState<string>("todas");
+  const [filtrosAbertos, setFiltrosAbertos] = useState(false);
+  const filtrosRef = useRef<HTMLDivElement>(null);
   const { gerentesBySupNome } = useHierarquia();
   const [uploadingId, setUploadingId] = useState<string | null>(null);
   const compInputRef = useRef<HTMLInputElement>(null);
@@ -106,6 +108,11 @@ function AceleraDetail() {
   };
 
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [id]);
+  useEffect(() => {
+    const fechar = (event: MouseEvent) => { if (filtrosRef.current && !filtrosRef.current.contains(event.target as Node)) setFiltrosAbertos(false); };
+    document.addEventListener("mousedown", fechar);
+    return () => document.removeEventListener("mousedown", fechar);
+  }, []);
 
   const PAY_STEPS: Array<{ key: AnexoTipo; col: keyof Lancamento; label: string }> = [
     { key: "comp_corretor", col: "comp_corretor_url", label: "Comprovante Corretor" },
@@ -278,6 +285,9 @@ function AceleraDetail() {
   const totDir = view.reduce((s, l) => s + Number(l.meta_gerente || 0), 0);
   const totInv = totCor + totGer + totSup + totDir;
   const totFinal = view.filter((l) => !!l.acelera_finalizado_em).length;
+  const qtdGerentes = new Set(view.map((l) => l.gerente).filter(Boolean)).size;
+  const qtdSups = new Set(view.map((l) => l.superintendente).filter(Boolean)).size;
+  const qtdDiretores = view.length > 0 ? 1 : 0;
 
   return (
     <div className="space-y-8">
@@ -316,34 +326,31 @@ function AceleraDetail() {
         </div>
       )}
 
-      <div className="grid gap-3 md:grid-cols-5">
-        <div className={cyberStat}><div className={cyberStatLabel}>Total Investido</div><div className="text-xl font-bold text-[#39FF14]">{brl(totInv)}</div></div>
-        <div className={cyberStat}><div className={cyberStatLabel}>Corretores</div><div className="text-xl font-bold text-gray-100">{brl(totCor)}</div></div>
-        <div className={cyberStat}><div className={cyberStatLabel}>Gerentes</div><div className="text-xl font-bold text-gray-100">{brl(totGer)}</div></div>
-        <div className={cyberStat}><div className={cyberStatLabel}>Sup.</div><div className="text-xl font-bold text-gray-100">{brl(totSup)}</div></div>
-        <div className={cyberStat}><div className={cyberStatLabel}>Diretores</div><div className="text-xl font-bold text-gray-100">{brl(totDir)}</div></div>
-      </div>
-      <div className={`${cyberStat} flex items-center justify-between`}>
-        <div>
-          <div className={cyberStatLabel}>Finalizados</div>
-          <div className="text-xl font-bold text-gray-100">{totFinal}<span className="text-xs text-gray-500">/{view.length}</span></div>
+      <section className="border border-[#39FF14]/25 bg-black/55 p-4 backdrop-blur-md">
+        <div className="mb-3 flex items-center justify-between border-b border-[#39FF14]/15 pb-3"><h2 className="text-[10px] font-bold uppercase tracking-[0.28em] text-[#39FF14]">/ / RESUMO</h2><span className="text-[9px] uppercase tracking-[0.16em] text-white/40">{totFinal}/{view.length} finalizados</span></div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          {[["Corretores", view.length, totCor], ["Gerentes", qtdGerentes, totGer], ["SUP", qtdSups, totSup], ["Diretor", qtdDiretores, totDir]].map(([rotulo, participantes, valor]) => <div key={rotulo as string} className="border border-white/10 bg-white/[0.025] p-4"><div className="text-[10px] font-bold uppercase tracking-widest text-[#39FF14]">{rotulo}</div><div className="mt-3 text-[9px] uppercase tracking-widest text-white/35">Participantes</div><div className="mt-1 font-mono text-xl font-bold text-white">{participantes}</div><div className="mt-3 text-[9px] uppercase tracking-widest text-white/35">Valor</div><div className="mt-1 font-mono text-sm font-bold text-white">{brl(Number(valor))}</div></div>)}
+          <div className="flex flex-col justify-center border border-[#39FF14]/30 bg-[#39FF14]/[0.035] p-4"><div className="text-[10px] font-bold uppercase tracking-widest text-[#39FF14]">Total investido</div><div className="mt-3 font-mono text-xl font-bold text-[#39FF14]">{brl(totInv)}</div>{form.acelera_finalizado_em && <Badge className={`${cyberBadge} mt-4 w-fit`}><CheckCircle2 className="mr-1 h-3 w-3" />Finalizado</Badge>}</div>
         </div>
-        {form.acelera_finalizado_em && <Badge className={cyberBadge}><CheckCircle2 className="h-3 w-3 mr-1" />Formulário finalizado</Badge>}
-      </div>
+      </section>
 
-      <div className="flex items-center gap-4 flex-wrap">
-        {gerentesDisponiveis.length > 0 && (
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] uppercase tracking-[0.25em] text-[#39FF14]/70">Gerente:</span>
+      <div className="flex items-center justify-end gap-2">
+        <div ref={filtrosRef} className="relative">
+          <button type="button" onClick={() => setFiltrosAbertos((aberto) => !aberto)} className="flex h-9 items-center gap-2 border border-[#39FF14]/40 bg-black/70 px-3 text-[10px] font-bold uppercase tracking-[0.22em] text-[#39FF14] transition hover:border-[#39FF14] hover:bg-[#39FF14]/10">Filtro</button>
+          <div className={`absolute right-0 top-[calc(100%+10px)] z-50 w-72 space-y-3 border border-[#39FF14]/35 bg-black/95 p-4 shadow-[0_0_35px_rgba(57,255,20,0.12)] backdrop-blur-2xl transition-all ${filtrosAbertos ? "visible opacity-100" : "invisible -translate-y-2 opacity-0"}`}>
+          <div className="border-b border-[#39FF14]/20 pb-2 text-[9px] uppercase tracking-[0.25em] text-white/40">/ / FILTROS</div>
+          {gerentesDisponiveis.length > 0 && (
+          <div>
+            <span className="mb-1 block text-[9px] uppercase tracking-[0.2em] text-white/40">Gerente</span>
             <select className="h-9 rounded-none border border-[#39FF14]/30 bg-black/60 backdrop-blur-md px-2 text-[10px] uppercase tracking-widest text-gray-300 focus:border-[#39FF14] outline-none" value={filtroGerente} onChange={(e) => setFiltroGerente(e.target.value)}>
               <option value="todos">Todos os gerentes</option>
               {gerentesDisponiveis.map((g) => <option key={g} value={g}>{g}</option>)}
             </select>
           </div>
         )}
-        <div className="flex items-center gap-2">
-          <span className="text-[10px] uppercase tracking-[0.25em] text-[#39FF14]/70">Etapa:</span>
-          <select className="h-9 rounded-none border border-[#39FF14]/30 bg-black/60 backdrop-blur-md px-2 text-[10px] uppercase tracking-widest text-gray-300 focus:border-[#39FF14] outline-none" value={filtroEtapa} onChange={(e) => setFiltroEtapa(e.target.value)}>
+        <div>
+          <span className="mb-1 block text-[9px] uppercase tracking-[0.2em] text-white/40">Etapa</span>
+          <select className="h-9 w-full rounded-none border border-[#39FF14]/30 bg-black/60 px-2 text-[10px] uppercase tracking-widest text-gray-300 outline-none focus:border-[#39FF14]" value={filtroEtapa} onChange={(e) => setFiltroEtapa(e.target.value)}>
             <option value="todas">Todas as etapas</option>
             <option value="corretor">Corretor</option>
             <option value="gerente">Gerente</option>
@@ -351,6 +358,8 @@ function AceleraDetail() {
             <option value="diretor">Diretor</option>
             <option value="finalizado">Finalizado</option>
           </select>
+        </div>
+          </div>
         </div>
       </div>
 

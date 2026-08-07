@@ -158,19 +158,24 @@ export const vendasList = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     await assertAuth(data.token);
 
-    // load vendas (paginated)
-    const vendas: any[] = [];
+    // Vendas realizadas vêm exclusivamente da sincronização do Google Sheets.
+    // Uma venda só entra na Previsão depois que toda a hierarquia foi vinculada
+    // na aba Vendas do Painel de Controle.
+    const vendasSheets: any[] = [];
     const pageSize = 1000;
     let from = 0;
     while (true) {
       const { data: page, error } = await supabaseAdmin
-        .from("vendas_realizadas")
-        .select("*")
+        .from("vendas_salesforce")
+        .select("id, proposta_identificador, data_assinatura, empreendimento, unidade, diretor, superintendente, gerente, corretor, diretor_profile_id, superintendente_profile_id, gerente_id")
+        .not("diretor_profile_id", "is", null)
+        .not("superintendente_profile_id", "is", null)
+        .not("gerente_id", "is", null)
         .order("data_assinatura", { ascending: false })
         .range(from, from + pageSize - 1);
       if (error) throw new Error(error.message);
       if (!page || page.length === 0) break;
-      vendas.push(...page);
+      vendasSheets.push(...page);
       if (page.length < pageSize) break;
       from += pageSize;
     }
@@ -217,6 +222,27 @@ export const vendasList = createServerFn({ method: "POST" })
         if (g) gerByNorm.set(row.alias_normalizado, { nome: g.nome, sup_nome: g.sup_id ? (profName.get(g.sup_id) ?? null) : null });
       }
     }
+
+    const vendas = vendasSheets.map((v) => {
+      const gerenteVinculado = v.gerente_id ? gerInfo.get(v.gerente_id) : null;
+      const superintendente = v.superintendente_profile_id
+        ? profName.get(v.superintendente_profile_id)
+        : null;
+      const diretor = v.diretor_profile_id ? profName.get(v.diretor_profile_id) : null;
+      return {
+        id: v.id,
+        pv: v.proposta_identificador,
+        empreendimento: v.empreendimento,
+        data_assinatura: v.data_assinatura,
+        superintendente: superintendente || v.superintendente || null,
+        gerente: gerenteVinculado?.nome || v.gerente || null,
+        corretor: v.corretor,
+        diretor: diretor || v.diretor || null,
+        vgv: 0,
+        unidades: 1,
+        produto_id: null as string | null,
+      };
+    });
 
     const vendasResolved = vendas.map((v) => {
       const out = { ...v };
@@ -520,9 +546,10 @@ const PrevisaoBulkInput = z.object({
   semana_fim: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   observacao: z.string().max(1000).optional().nullable(),
   itens: z.array(z.object({
-    gerente: z.string().trim().min(1).max(200),
+    gerente: z.string().trim().max(200).optional().nullable(),
+    produto_id: z.string().uuid().optional().nullable(),
     preciso_vendas: z.number().min(0).max(1e9),
-  })).min(1).max(200),
+  }).refine((item) => Boolean(item.gerente?.trim() || item.produto_id), "Informe gerente ou produto")).min(1).max(200),
 });
 export const previsaoCreateBulk = createServerFn({ method: "POST" })
   .inputValidator((i: unknown) => PrevisaoBulkInput.parse(i))
@@ -530,7 +557,7 @@ export const previsaoCreateBulk = createServerFn({ method: "POST" })
     const userId = await assertAuth(data.token);
     await assertCanWrite(data.token);
     await assertHierarquiaDisponivelNoPeriodo(
-      data.superintendente, data.itens.map((item) => item.gerente),
+      data.superintendente, data.itens.map((item) => item.gerente?.trim()).filter((nome): nome is string => Boolean(nome)),
       data.mes_referencia, data.ano_referencia,
     );
     const rows = data.itens
@@ -538,7 +565,8 @@ export const previsaoCreateBulk = createServerFn({ method: "POST" })
       .map((it) => ({
         usuario_id: userId,
         superintendente: data.superintendente,
-        gerente: it.gerente,
+        gerente: it.gerente?.trim() || null,
+        produto_id: it.produto_id ?? null,
         mes_referencia: data.mes_referencia,
         ano_referencia: data.ano_referencia,
         semana_inicio: data.semana_inicio,

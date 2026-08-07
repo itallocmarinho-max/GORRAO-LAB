@@ -1,24 +1,24 @@
 import { createFileRoute, Link, Outlet, useLocation } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { FileText, CheckCircle2 } from "lucide-react";
 import { brl, fmtDateTime } from "@/lib/format";
 import { StatusBadge } from "@/lib/status";
 import { toast } from "sonner";
 import { CyberHeading } from "@/components/cyber/CyberHeading";
+import { useHierarquia } from "@/hooks/useHierarquia";
 import {
   cyberCard,
   cyberCardHover,
   cyberSelectTrigger,
   cyberSelectContent,
   cyberSelectItem,
-  cyberTabs,
-  cyberTabBtn,
   cyberBadge,
   cyberBadgeMuted,
   cyberStat,
@@ -56,13 +56,22 @@ interface PlanForm {
 
 function AceleraList() {
   const location = useLocation();
-  const { user, role, canEdit, isRH, vinculadoId } = useAuth();
+  const { user, role, nome: nomeUsuario, canEdit, isDiretor, isRH, vinculadoId } = useAuth();
+  const { diretores, superintendentes } = useHierarquia();
   const [forms, setForms] = useState<PlanForm[]>([]);
   const [counts, setCounts] = useState<Record<string, { participantes: number; gerentes: number; investido: number; finalizados: number }>>({});
   const [filtroMes, setFiltroMes] = useState("todos");
   const [filtroAno, setFiltroAno] = useState("todos");
   const [filtroSup, setFiltroSup] = useState("todos");
-  const [tab, setTab] = useState<"andamento" | "finalizados">("andamento");
+  const [filtrosAbertos, setFiltrosAbertos] = useState(false);
+  const [supSelecionado, setSupSelecionado] = useState<string | null>(null);
+  const filtrosRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const fechar = (event: MouseEvent) => { if (filtrosRef.current && !filtrosRef.current.contains(event.target as Node)) setFiltrosAbertos(false); };
+    document.addEventListener("mousedown", fechar);
+    return () => document.removeEventListener("mousedown", fechar);
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -133,11 +142,27 @@ function AceleraList() {
   const filtered = forms.filter((f) =>
     (filtroMes === "todos" || String(f.mes_referencia ?? "") === filtroMes) &&
     (filtroAno === "todos" || String(f.ano_referencia ?? "") === filtroAno) &&
-    (filtroSup === "todos" || (f.criador_nome ?? f.superintendente ?? "") === filtroSup) &&
-    (tab === "finalizados" ? !!f.acelera_finalizado_em : !f.acelera_finalizado_em)
+    (filtroSup === "todos" || (f.criador_nome ?? f.superintendente ?? "") === filtroSup)
   );
-  const totAnd = forms.filter((f) => !f.acelera_finalizado_em).length;
-  const totFin = forms.filter((f) => !!f.acelera_finalizado_em).length;
+  const resumo = filtered.reduce((acc, formulario) => {
+    const c = counts[formulario.id] || { participantes: 0, gerentes: 0, investido: 0, finalizados: 0 };
+    acc.participantes += c.participantes;
+    acc.gerentes += c.gerentes;
+    acc.investido += c.investido;
+    acc.finalizados += c.finalizados;
+    return acc;
+  }, { participantes: 0, gerentes: 0, investido: 0, finalizados: 0 });
+  const normalizaNome = (valor: string) => valor.normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toUpperCase();
+  const diretorAtual = diretores.find((diretor) => normalizaNome(diretor.nome) === normalizaNome(nomeUsuario || ""));
+  const supsVisiveis = superintendentes
+    .filter((sup) => !normalizaNome(sup.nome).includes("PROCESSOS INTERNOS"))
+    .filter((sup) => !isDiretor || !diretorAtual || sup.diretor_id === diretorAtual.id);
+  const formulariosDoSup = (sup: { id: string; nome: string }) => filtered.filter((formulario) => {
+    const responsavel = formulario.criador_nome ?? formulario.superintendente ?? "";
+    return formulario.usuario_id === sup.id || normalizaNome(responsavel).includes(normalizaNome(sup.nome));
+  });
+  const supAberto = supsVisiveis.find((sup) => sup.id === supSelecionado) ?? null;
+  const mesesSupAberto = supAberto ? formulariosDoSup(supAberto) : [];
 
   return (
     <div className="space-y-8">
@@ -146,21 +171,21 @@ function AceleraList() {
       </div>
 
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-        <div className={cyberTabs}>
-          <button type="button" onClick={() => setTab("andamento")} className={cyberTabBtn(tab === "andamento")}>Em andamento ({totAnd})</button>
-          <button type="button" onClick={() => setTab("finalizados")} className={cyberTabBtn(tab === "finalizados")}>Finalizados ({totFin})</button>
-        </div>
+        <div />
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div ref={filtrosRef} className="relative">
+          <button type="button" onClick={() => setFiltrosAbertos((aberto) => !aberto)} className="flex h-9 items-center gap-2 border border-[#39FF14]/40 bg-black/70 px-3 text-[10px] font-bold uppercase tracking-[0.22em] text-[#39FF14] transition hover:border-[#39FF14] hover:bg-[#39FF14]/10"><span className="relative block h-4 w-6"><span className={`absolute top-1/2 h-[2px] w-3.5 bg-current transition ${filtrosAbertos ? "left-1/2 -translate-x-1/2 rotate-45" : "left-[22%] -translate-x-1/2 -rotate-[65deg]"}`} /><span className={`absolute top-1/2 h-[2px] w-3.5 bg-current transition ${filtrosAbertos ? "left-1/2 -translate-x-1/2 -rotate-45" : "left-[78%] -translate-x-1/2 -rotate-[65deg]"}`} /></span>Filtro</button>
+          <div className={`absolute right-0 top-[calc(100%+10px)] z-50 w-72 space-y-3 border border-[#39FF14]/35 bg-black/95 p-4 shadow-[0_0_35px_rgba(57,255,20,0.12)] backdrop-blur-2xl transition-all ${filtrosAbertos ? "visible translate-y-0 opacity-100" : "invisible -translate-y-2 opacity-0"}`}>
+          <div className="border-b border-[#39FF14]/20 pb-2 text-[9px] uppercase tracking-[0.25em] text-white/40">/ / FILTROS</div>
           <Select value={filtroMes} onValueChange={setFiltroMes}>
-            <SelectTrigger className={`${cyberSelectTrigger} w-[140px]`}><SelectValue placeholder="MÊS" /></SelectTrigger>
+            <SelectTrigger className={`${cyberSelectTrigger} w-full`}><SelectValue placeholder="MÊS" /></SelectTrigger>
             <SelectContent className={cyberSelectContent}>
               <SelectItem value="todos" className={cyberSelectItem}>TODOS</SelectItem>
               {MESES.map((m, i) => <SelectItem key={i} value={String(i + 1)} className={cyberSelectItem}>{m.toUpperCase()}</SelectItem>)}
             </SelectContent>
           </Select>
           <Select value={filtroAno} onValueChange={setFiltroAno}>
-            <SelectTrigger className={`${cyberSelectTrigger} w-[120px]`}><SelectValue placeholder="ANO" /></SelectTrigger>
+            <SelectTrigger className={`${cyberSelectTrigger} w-full`}><SelectValue placeholder="ANO" /></SelectTrigger>
             <SelectContent className={cyberSelectContent}>
               <SelectItem value="todos" className={cyberSelectItem}>TODOS</SelectItem>
               {Array.from(new Set(forms.map((f) => f.ano_referencia).filter(Boolean) as number[])).sort((a, b) => b - a).map((y) => (
@@ -169,7 +194,7 @@ function AceleraList() {
             </SelectContent>
           </Select>
           <Select value={filtroSup} onValueChange={setFiltroSup}>
-            <SelectTrigger className={`${cyberSelectTrigger} w-[220px]`}><SelectValue placeholder="SUPERINTENDENTE" /></SelectTrigger>
+            <SelectTrigger className={`${cyberSelectTrigger} w-full`}><SelectValue placeholder="SUPERINTENDENTE" /></SelectTrigger>
             <SelectContent className={cyberSelectContent}>
               <SelectItem value="todos" className={cyberSelectItem}>TODOS</SelectItem>
               {Array.from(new Set(forms.map((f) => f.criador_nome ?? f.superintendente).filter(Boolean) as string[])).sort().map((s) => (
@@ -177,63 +202,67 @@ function AceleraList() {
               ))}
             </SelectContent>
           </Select>
+          </div>
         </div>
       </div>
 
-      {filtered.length === 0 ? (
-        <div className={`${cyberCard} ${cyberEmpty}`}>
-          <FileText className="h-10 w-10 text-[#39FF14]/60" />
-          <p>Nenhum planejamento encontrado.</p>
+      <section className="border border-[#39FF14]/25 bg-black/55 p-4 backdrop-blur-md">
+        <div className="mb-3 flex items-center justify-between border-b border-[#39FF14]/15 pb-3"><h2 className="text-[10px] font-bold uppercase tracking-[0.28em] text-[#39FF14]">/ / RESUMO</h2><span className="text-[9px] uppercase tracking-[0.18em] text-white/40">{filtered.length} competências</span></div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="border border-white/10 bg-white/[0.025] p-3"><div className={cyberStatLabel}>Corretores</div><div className="mt-1 font-mono text-xl font-bold text-white">{resumo.participantes}</div></div>
+          <div className="border border-white/10 bg-white/[0.025] p-3"><div className={cyberStatLabel}>Gerentes</div><div className="mt-1 font-mono text-xl font-bold text-white">{resumo.gerentes}</div></div>
+          <div className="border border-white/10 bg-white/[0.025] p-3"><div className={cyberStatLabel}>Finalizados</div><div className="mt-1 font-mono text-xl font-bold text-white">{resumo.finalizados}<span className="text-xs text-white/35">/{resumo.participantes}</span></div></div>
+          <div className="border border-[#39FF14]/30 bg-[#39FF14]/[0.035] p-3 lg:col-span-2"><div className={cyberStatLabel}>Total investido</div><div className="mt-1 font-mono text-xl font-bold text-[#39FF14]">{brl(resumo.investido)}</div></div>
         </div>
-      ) : (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {filtered.map((f) => {
-            const c = counts[f.id] || { participantes: 0, gerentes: 0, investido: 0, finalizados: 0 };
-            const finalizado = !!f.acelera_finalizado_em;
+      </section>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+          {supsVisiveis.map((sup) => {
+            const formularios = formulariosDoSup(sup);
+            const totalSup = formularios.reduce((total, formulario) => {
+              const c = counts[formulario.id] || { participantes: 0, gerentes: 0, investido: 0, finalizados: 0 };
+              total.participantes += c.participantes;
+              total.gerentes += c.gerentes;
+              total.investido += c.investido;
+              total.finalizados += c.finalizados;
+              return total;
+            }, { participantes: 0, gerentes: 0, investido: 0, finalizados: 0 });
             return (
-              <Link key={f.id} to="/acelera/$id" params={{ id: f.id }} className="block">
-                <Card className={`${cyberCard} ${cyberCardHover} border-[#1e3a8a] hover:border-[#1e3a8a]`}>
+              <button key={sup.id} type="button" onClick={() => setSupSelecionado(sup.id)} className="block min-w-0 text-left">
+                <Card className={`${cyberCard} ${cyberCardHover} h-full border-[#39FF14]/25 hover:border-[#39FF14]`}>
                   <CardHeader className="p-4 pb-2">
-                    <div className="flex items-start justify-between gap-2">
-                      <CardTitle className="text-sm uppercase tracking-[0.15em] text-gray-100">{f.nome || fmtDateTime(f.created_at)}</CardTitle>
-                      <div className="flex items-center gap-1">
-                        {finalizado && <Badge className={`${cyberBadge}`}><CheckCircle2 className="h-3 w-3 mr-1" />Final</Badge>}
-                        <StatusBadge status={f.status as any} />
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 mt-2">
-                      <Badge className={cyberBadgeMuted}>{f.criador_nome ?? f.superintendente ?? "—"}</Badge>
-                      {f.mes_referencia && f.ano_referencia && (
-                        <span className="text-[10px] uppercase tracking-[0.2em] text-[#39FF14]/70">{MESES[f.mes_referencia - 1]}/{f.ano_referencia}</span>
-                      )}
-                    </div>
+                    <CardTitle className="truncate border-b border-white/10 pb-2 text-xs uppercase tracking-[0.15em] text-[#39FF14]" title={sup.nome}>{sup.nome}</CardTitle>
                   </CardHeader>
                   <CardContent className="p-4 pt-0 space-y-3">
-                    <div className="grid grid-cols-2 gap-2">
-                      <div className={cyberStat}><div className={cyberStatLabel}>Corretores</div><div className={cyberStatValue}>{c.participantes}</div></div>
-                      <div className={cyberStat}><div className={cyberStatLabel}>Gerentes</div><div className={cyberStatValue}>{c.gerentes}</div></div>
-                      <div className={cyberStat}><div className={cyberStatLabel}>Investimento</div><div className="text-sm font-bold text-[#39FF14]">{brl(c.investido)}</div></div>
-                      <div className={cyberStat}><div className={cyberStatLabel}>Finalizados</div><div className={cyberStatValue}>{c.finalizados}<span className="text-xs text-gray-500">/{c.participantes}</span></div></div>
+                    <div className="space-y-2 text-[10px] uppercase tracking-[0.1em]">
+                      <div className="flex justify-between gap-2"><span className="text-white/45">Corretores</span><strong className="font-mono text-white">{totalSup.participantes}</strong></div>
+                      <div className="flex justify-between gap-2"><span className="text-white/45">Gerentes</span><strong className="font-mono text-white">{totalSup.gerentes}</strong></div>
+                      <div className="flex justify-between gap-2"><span className="text-white/45">Finalizados</span><strong className="font-mono text-white">{totalSup.finalizados}/{totalSup.participantes}</strong></div>
+                      <div className="flex justify-between gap-2 border-t border-white/10 pt-2"><span className="text-white/45">Investimento</span><strong className="font-mono text-[#39FF14]">{brl(totalSup.investido)}</strong></div>
                     </div>
-                    {f.status !== "validado" && !finalizado && (
-                      <Badge className={cyberBadgeMuted}>Anexos liberados após validação</Badge>
-                    )}
-                    {role === "admin" && canEdit && (
-                      finalizado ? (
-                        <Button size="sm" className={`${cyberBtnGhost} w-full`} onClick={(e) => reabrir(e, f)}>Reabrir Acelera</Button>
-                      ) : (
-                        <Button size="sm" className={`${cyberBtn} w-full`} onClick={(e) => finalizar(e, f)} disabled={f.status !== "validado"}>
-                          <CheckCircle2 className="h-4 w-4 mr-1" /> Finalizar Acelera
-                        </Button>
-                      )
-                    )}
+                    <div className="text-[7px] uppercase tracking-[0.12em] text-white/25">{formularios.length ? "Clique para escolher o mês" : "Sem lançamento"}</div>
                   </CardContent>
                 </Card>
-              </Link>
+              </button>
             );
           })}
-        </div>
-      )}
+          {supsVisiveis.length === 0 && <div className={`${cyberCard} ${cyberEmpty} xl:col-span-6`}><FileText className="h-10 w-10 text-[#39FF14]/60" /><p>Nenhum superintendente vinculado.</p></div>}
+      </div>
+
+      <Dialog open={!!supSelecionado} onOpenChange={(aberto) => !aberto && setSupSelecionado(null)}>
+        <DialogContent className="border border-[#39FF14]/35 bg-black/95 text-white shadow-[0_0_45px_rgba(57,255,20,0.13)] backdrop-blur-2xl sm:max-w-md">
+          <DialogHeader><DialogTitle className="text-sm uppercase tracking-[0.2em] text-[#39FF14]">{supAberto?.nome}</DialogTitle></DialogHeader>
+          <div className="space-y-2">
+            {mesesSupAberto.map((formulario) => (
+              <Link key={formulario.id} to="/acelera/$id" params={{ id: formulario.id }} className="flex items-center justify-between border border-white/10 bg-white/[0.025] p-3 transition hover:border-[#39FF14]/60 hover:bg-[#39FF14]/[0.04]">
+                <div><div className="text-xs font-bold uppercase tracking-[0.14em] text-white">{formulario.mes_referencia ? MESES[formulario.mes_referencia - 1] : "Mês não informado"}/{formulario.ano_referencia || "—"}</div><div className="mt-1 text-[8px] uppercase tracking-[0.12em] text-white/35">{formulario.status}</div></div>
+                <span className="text-[9px] uppercase tracking-[0.15em] text-[#39FF14]">Abrir / /</span>
+              </Link>
+            ))}
+            {mesesSupAberto.length === 0 && <div className="border border-dashed border-white/10 p-6 text-center text-[10px] uppercase tracking-widest text-white/35">Nenhum lançamento nos filtros selecionados</div>}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -87,6 +87,16 @@ function FinanceiroPage() {
   const [filtroDestino, setFiltroDestino] = useState<string>("todos");
   const [filtroTipo, setFiltroTipo] = useState<string>("todos");
   const [filtroGerente, setFiltroGerente] = useState<string>("todos");
+  const [filtrosAbertos, setFiltrosAbertos] = useState(false);
+  const filtrosRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const fechar = (event: MouseEvent) => {
+      if (filtrosRef.current && !filtrosRef.current.contains(event.target as Node)) setFiltrosAbertos(false);
+    };
+    document.addEventListener("mousedown", fechar);
+    return () => document.removeEventListener("mousedown", fechar);
+  }, []);
 
   useEffect(() => {
     if (!loading && !(isAdmin || isDiretor)) {
@@ -164,29 +174,35 @@ function FinanceiroPage() {
   }
 
   return (
-    <div className="verba-cyber relative -mx-6 -my-8 min-h-[calc(100vh-3rem)] overflow-hidden bg-[#050505] text-white px-6 py-10">
-      <CyberBackdrop />
-      <div className="relative z-10 space-y-6">
-      <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-        <div className="space-y-2">
-          <div className="inline-flex items-center gap-2 mb-2 px-3 py-1 text-[10px] tracking-[0.3em] uppercase text-[#39FF14] bg-black/40 backdrop-blur-md">
-            // FINANCEIRO
-          </div>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap md:justify-end">
+    <div className="relative z-10 space-y-6">
+      <div className="flex flex-wrap items-center justify-end gap-2">
           <LancamentoDialog onDone={reload} />
-        </div>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2">
         <ImportarDialog onDone={reload} />
         <AnexarFaltantesDialog items={items} onDone={reload} />
         <VincularArquivosDialog items={items} onDone={reload} />
+        <div ref={filtrosRef} className="relative">
+          <Button variant="outline" onClick={() => setFiltrosAbertos((aberto) => !aberto)} className="rounded-none border-[#39FF14]/45 bg-black/70 text-[10px] font-bold uppercase tracking-[0.18em] text-[#39FF14] hover:bg-[#39FF14]/10 hover:text-[#39FF14]">
+            <span className="relative mr-2 block h-4 w-6" aria-hidden>
+              <span className={`absolute top-1/2 h-[2px] w-3.5 bg-current transition-all duration-300 ${filtrosAbertos ? "left-1/2 -translate-x-1/2 rotate-45" : "left-[22%] -translate-x-1/2 -rotate-[65deg]"}`} />
+              <span className={`absolute top-1/2 h-[2px] w-3.5 bg-current transition-all duration-300 ${filtrosAbertos ? "left-1/2 -translate-x-1/2 -rotate-45" : "left-[78%] -translate-x-1/2 -rotate-[65deg]"}`} />
+            </span>
+            Filtro
+          </Button>
+          <div className={`absolute right-0 top-[calc(100%+10px)] z-50 w-[min(92vw,340px)] space-y-3 border border-[#39FF14]/35 bg-black/95 p-4 shadow-[0_0_40px_rgba(57,255,20,0.14)] backdrop-blur-2xl transition-all ${filtrosAbertos ? "visible translate-y-0 opacity-100" : "invisible -translate-y-2 opacity-0"}`}>
+            <div className="border-b border-[#39FF14]/20 pb-2 text-[9px] uppercase tracking-[0.25em] text-white/40">/ / FILTROS</div>
+            <FilterSelect label="Ano" value={filtroAno} onChange={setFiltroAno} options={[{ value: "todos", label: "Todos" }, ...anosUnicos.map((ano) => ({ value: String(ano), label: String(ano) }))]} />
+            <FilterSelect label="Mês" value={filtroMes} onChange={setFiltroMes} options={[{ value: "todos", label: "Todos" }, ...MESES.map((mes, index) => ({ value: String(index + 1), label: mes }))]} />
+            <FilterSelect label="Destino" value={filtroDestino} onChange={setFiltroDestino} options={[{ value: "todos", label: "Todos" }, { value: "diretor", label: "Diretor" }, { value: "superintendente", label: "Superintendente" }]} />
+            <FilterSelect label="Tipo de gasto" value={filtroTipo} onChange={setFiltroTipo} options={[{ value: "todos", label: "Todos" }, { value: "manutencao", label: "Manutenção" }, { value: "gerar_venda", label: "Gerar Venda" }]} />
+            <FilterSelect label="Gerente" value={filtroGerente} onChange={setFiltroGerente} options={[{ value: "todos", label: "Todos" }, { value: "__sem__", label: "Sem gerente" }, ...gerentesUnicos.map((gerente) => ({ value: gerente, label: gerente }))]} />
+            <Button variant="outline" className="w-full rounded-none border-[#39FF14]/35 bg-transparent text-[9px] uppercase tracking-[0.16em] text-[#39FF14]" onClick={() => { setFiltroAno("todos"); setFiltroMes("todos"); setFiltroDestino("todos"); setFiltroTipo("todos"); setFiltroGerente("todos"); }}>Limpar filtros</Button>
+          </div>
+        </div>
       </div>
 
       <ResumoCards filtered={filtered} />
 
-      <div className="flex flex-wrap items-end gap-3 p-4">
+      {false && <div className="flex flex-wrap items-end gap-3 p-4">
         <div className="grid gap-1">
           <Label>Ano</Label>
           <Select value={filtroAno} onValueChange={setFiltroAno}>
@@ -246,10 +262,11 @@ function FinanceiroPage() {
             </SelectContent>
           </Select>
         </div>
-      </div>
+      </div>}
 
-      <div className="rounded-lg border border-[#39FF14]/40 bg-card overflow-x-auto">
-        <Table>
+      <section className="border border-[#39FF14]/25 bg-black/55 backdrop-blur-md">
+        <div className="flex items-center justify-between border-b border-[#39FF14]/20 p-4"><h2 className="text-[10px] font-bold uppercase tracking-[0.26em] text-[#39FF14]">/ / LANÇAMENTOS</h2><span className="text-[9px] uppercase tracking-[0.16em] text-white/35">{filtered.length} registros · {brl(total)}</span></div>
+        <div className="overflow-x-auto"><Table className="[&_th]:text-[9px] [&_th]:uppercase [&_th]:tracking-[0.16em] [&_th]:text-[#39FF14] [&_tr]:border-[#39FF14]/15 [&_td]:text-white/85">
           <TableHeader>
             <TableRow>
               <TableHead>Período</TableHead>
@@ -312,11 +329,20 @@ function FinanceiroPage() {
               </TableRow>
             ))}
           </TableBody>
-        </Table>
-      </div>
-      </div>
+        </Table></div>
+      </section>
     </div>
   );
+}
+
+function FilterSelect({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: { value: string; label: string }[] }) {
+  return <div className="space-y-1">
+    <Label className="text-[9px] uppercase tracking-[0.16em] text-white/45">{label}</Label>
+    <Select value={value} onValueChange={onChange}>
+      <SelectTrigger className="h-9 rounded-none border-[#39FF14]/30 bg-black text-white focus:ring-0"><SelectValue /></SelectTrigger>
+      <SelectContent className="rounded-none border-[#39FF14]/30 bg-black text-white">{options.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
+    </Select>
+  </div>;
 }
 
 function ResumoCards({ filtered }: { filtered: Lancamento[] }) {
@@ -339,29 +365,32 @@ function ResumoCards({ filtered }: { filtered: Lancamento[] }) {
   const pctGerarVenda = total > 0 ? (gerarVenda / total) * 100 : 0;
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-      <div className="rounded-lg border border-[#39FF14]/40 bg-card p-4">
-        <div className="text-xs uppercase tracking-wide text-[#39FF14]">Total investido</div>
-        <div className="text-xl font-bold mt-1">{brl(total)}</div>
+    <section className="border border-[#39FF14]/25 bg-black/55 p-4 backdrop-blur-md">
+      <div className="mb-3 flex items-center justify-between border-b border-[#39FF14]/15 pb-3"><h2 className="text-[10px] font-bold uppercase tracking-[0.26em] text-[#39FF14]">/ / RESUMO</h2><span className="text-[9px] uppercase tracking-[0.16em] text-white/35">{filtered.length} lançamentos</span></div>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="border border-[#39FF14]/30 bg-[#39FF14]/[0.035] p-4">
+        <div className="text-[9px] uppercase tracking-[0.2em] text-[#39FF14]/70">Total investido</div>
+        <div className="mt-1 font-mono text-xl font-bold text-[#39FF14]">{brl(total)}</div>
       </div>
-      <div className="rounded-lg border border-[#39FF14]/40 bg-card p-4">
-        <div className="text-xs uppercase tracking-wide text-[#39FF14]">Média mensal</div>
-        <div className="text-xl font-bold mt-1">{brl(mediaMensal)}</div>
-        <div className="text-xs text-muted-foreground mt-1">
+      <div className="border border-white/10 bg-white/[0.025] p-4">
+        <div className="text-[9px] uppercase tracking-[0.2em] text-white/45">Média mensal</div>
+        <div className="mt-1 font-mono text-xl font-bold text-white">{brl(mediaMensal)}</div>
+        <div className="mt-1 text-[9px] uppercase tracking-[0.12em] text-white/30">
           {mesesDistintos} mes(es) com lançamentos
         </div>
       </div>
-      <div className="rounded-lg border border-[#39FF14]/40 bg-card p-4">
-        <div className="text-xs uppercase tracking-wide text-[#39FF14]">Manutenção</div>
-        <div className="text-xl font-bold mt-1 text-amber-700 dark:text-amber-300">{brl(manutencao)}</div>
-        <div className="text-xs text-muted-foreground mt-1">{pctManutencao.toFixed(1)}% do total</div>
+      <div className="border border-white/10 bg-white/[0.025] p-4">
+        <div className="text-[9px] uppercase tracking-[0.2em] text-white/45">Manutenção</div>
+        <div className="mt-1 font-mono text-xl font-bold text-amber-300">{brl(manutencao)}</div>
+        <div className="mt-1 text-[9px] uppercase tracking-[0.12em] text-white/30">{pctManutencao.toFixed(1)}% do total</div>
       </div>
-      <div className="rounded-lg border border-[#39FF14]/40 bg-card p-4">
-        <div className="text-xs uppercase tracking-wide text-[#39FF14]">Gerar Venda</div>
-        <div className="text-xl font-bold mt-1 text-emerald-700 dark:text-emerald-300">{brl(gerarVenda)}</div>
-        <div className="text-xs text-muted-foreground mt-1">{pctGerarVenda.toFixed(1)}% do total</div>
+      <div className="border border-white/10 bg-white/[0.025] p-4">
+        <div className="text-[9px] uppercase tracking-[0.2em] text-white/45">Gerar Venda</div>
+        <div className="mt-1 font-mono text-xl font-bold text-[#39FF14]">{brl(gerarVenda)}</div>
+        <div className="mt-1 text-[9px] uppercase tracking-[0.12em] text-white/30">{pctGerarVenda.toFixed(1)}% do total</div>
       </div>
-    </div>
+      </div>
+    </section>
   );
 }
 
@@ -525,10 +554,10 @@ function AnexarFaltantesDialog({ items, onDone }: { items: Lancamento[]; onDone:
           )}
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto rounded-none border border-[#39FF14]/40 bg-black/95 text-white shadow-[0_0_45px_rgba(57,255,20,0.14)] backdrop-blur-2xl">
         <DialogHeader>
-          <DialogTitle>
-            Anexar comprovantes faltantes
+          <DialogTitle className="text-sm font-bold uppercase tracking-[0.2em] text-[#39FF14]">
+            / / Anexar comprovantes faltantes
             {faltantes.length > 0 && (
               <span className="ml-2 text-sm font-normal text-muted-foreground">
                 ({idx + 1} de {faltantes.length})
@@ -807,10 +836,10 @@ function VincularArquivosDialog({ items, onDone }: { items: Lancamento[]; onDone
           )}
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-6xl max-h-[92vh] overflow-hidden p-0 gap-0">
+      <DialogContent className="max-h-[92vh] max-w-6xl gap-0 overflow-hidden rounded-none border border-[#39FF14]/40 bg-black/95 p-0 text-white shadow-[0_0_45px_rgba(57,255,20,0.14)] backdrop-blur-2xl">
         <DialogHeader className="px-6 pt-6 pb-3 border-b">
-          <DialogTitle className="flex items-center gap-3">
-            Vincular comprovantes aos lançamentos
+          <DialogTitle className="flex items-center gap-3 text-sm font-bold uppercase tracking-[0.2em] text-[#39FF14]">
+            / / Vincular comprovantes aos lançamentos
             {entries.length > 0 && (
               <span className="text-sm font-normal text-muted-foreground">
                 {idx + 1} de {entries.length} • {vinculadosCount} vinculados • {pendentesCount} pendentes
@@ -1129,11 +1158,11 @@ function LancamentoDialog({ onDone, lancamento }: { onDone: () => void; lancamen
       <DialogTrigger asChild>
         {isEdit
           ? <Button variant="ghost" size="icon" title="Editar"><Pencil className="h-4 w-4" /></Button>
-          : <Button><Plus className="h-4 w-4 mr-1" />Novo lançamento</Button>}
+          : <Button className="rounded-none bg-[#39FF14] font-bold uppercase tracking-[0.14em] text-black hover:bg-[#39FF14]/85"><Plus className="h-4 w-4 mr-1" />Novo lançamento</Button>}
       </DialogTrigger>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto rounded-none border border-[#39FF14]/40 bg-black/95 text-white shadow-[0_0_45px_rgba(57,255,20,0.14)] backdrop-blur-2xl">
         <DialogHeader>
-          <DialogTitle>{isEdit ? "Editar lançamento" : "Novo lançamento financeiro"}</DialogTitle>
+          <DialogTitle className="text-sm font-bold uppercase tracking-[0.2em] text-[#39FF14]">/ / {isEdit ? "Editar lançamento" : "Novo lançamento financeiro"}</DialogTitle>
         </DialogHeader>
         <div className="grid gap-4 py-2">
           <div className="grid grid-cols-2 gap-3">
@@ -1469,9 +1498,9 @@ function ImportarDialog({ onDone }: { onDone: () => void }) {
       <DialogTrigger asChild>
         <Button variant="outline"><Upload className="h-4 w-4 mr-1" />Importar Excel</Button>
       </DialogTrigger>
-      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto rounded-none border border-[#39FF14]/40 bg-black/95 text-white shadow-[0_0_45px_rgba(57,255,20,0.14)] backdrop-blur-2xl">
         <DialogHeader>
-          <DialogTitle>Importar lançamentos do Excel</DialogTitle>
+          <DialogTitle className="text-sm font-bold uppercase tracking-[0.2em] text-[#39FF14]">/ / Importar lançamentos do Excel</DialogTitle>
         </DialogHeader>
 
         {rows.length === 0 ? (

@@ -11,8 +11,9 @@ export const Route = createFileRoute("/_app")({
   component: AppLayout,
 });
 
-function AppHeader({ formulario }: { formulario: boolean }) {
+function AppHeader({ formulario, tituloFixo }: { formulario: boolean; tituloFixo?: string }) {
   const { activeFormType } = useActiveFormType();
+  const titulo = tituloFixo || (formulario && activeFormType ? tipoLabel(activeFormType).replace(/^\/\/\s*/, "") : null);
   return (
     <header className="sticky top-0 z-40 grid h-14 grid-cols-[1fr_auto_1fr] items-center border-b border-[#39FF14]/20 bg-black/95 px-4 backdrop-blur-xl">
       <div className="flex items-center gap-2 justify-self-start">
@@ -21,9 +22,9 @@ function AppHeader({ formulario }: { formulario: boolean }) {
         </div>
         <span className="text-[11px] font-bold uppercase tracking-[0.3em] text-white/90">GORRÃO <span className="text-[#39FF14]">/ /</span> LAB</span>
       </div>
-      {formulario && activeFormType && (
+      {titulo && (
         <h1 className="justify-self-center text-xs font-bold uppercase tracking-[0.35em] text-[#39FF14]">
-          {tipoLabel(activeFormType).replace(/^\/\/\s*/, "")}
+          {titulo}
         </h1>
       )}
       <div className="flex items-center gap-2 justify-self-end">
@@ -40,6 +41,7 @@ function AppLayout() {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const dashboardHeader = pathname === "/dashboard";
   const formularioHeader = pathname.startsWith("/formularios/");
+  const tituloFixo = pathname.startsWith("/acelera") ? "ACELERA VENDAS" : pathname.startsWith("/previsao") ? "PREVISÃO" : pathname.startsWith("/financeiro") ? "FINANCEIRO" : pathname.startsWith("/admin/painel") ? "PAINEL DE CONTROLE" : undefined;
   useEffect(() => {
     if (!loading && !user) navigate({ to: "/login" });
   }, [user, loading, navigate]);
@@ -56,7 +58,7 @@ function AppLayout() {
     <ActiveFormTypeProvider>
         <div className="min-h-screen w-full bg-black text-white">
             {!dashboardHeader && (
-              <AppHeader formulario={formularioHeader} />
+              <AppHeader formulario={formularioHeader} tituloFixo={tituloFixo} />
             )}
             <main
               className={`verba-cyber relative bg-black overflow-hidden ${dashboardHeader ? "min-h-screen" : "min-h-[calc(100vh-3.5rem)]"}`}
