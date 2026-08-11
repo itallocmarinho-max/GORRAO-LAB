@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { PastasOverview } from "@/components/PastasOverview";
 import { ResumoInicioButton } from "@/components/ResumoInicioButton";
+import { CyberProgressRing } from "@/components/CyberProgressRing";
 import { pastasSheetsList, type PastaVolumeRow } from "@/functions/google-sheets-pastas.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -307,7 +308,11 @@ function PaginaInicial() {
                   </span>
                 </div>
                 <div className="mt-7 grid items-center gap-6 sm:grid-cols-[170px_1fr]">
-                  <ProgressRing percentual={percentualPlanejamento} />
+                  <CyberProgressRing
+                    percentual={percentualPlanejamento}
+                    valor={`${percentualPlanejamento.toLocaleString("pt-BR", { maximumFractionDigits: 0 })}%`}
+                    rotulo="Realizado"
+                  />
                   <div>
                     <div className="text-[9px] uppercase tracking-[0.18em] text-white/35">
                       Planejado
@@ -508,33 +513,6 @@ function Mini({ valor, rotulo }: { valor: number; rotulo: string }) {
     <div className="border border-white/10 bg-white/[0.025] px-2 py-2">
       <div className="font-mono text-lg font-bold text-white">{valor}</div>
       <div className="text-[7px] uppercase tracking-[0.12em] text-white/30">{rotulo}</div>
-    </div>
-  );
-}
-function ProgressRing({ percentual }: { percentual: number }) {
-  const valor = Math.min(Math.max(percentual, 0), 100);
-  return (
-    <div className="relative mx-auto h-40 w-40">
-      <svg viewBox="0 0 120 120" className="h-full w-full -rotate-90">
-        <circle cx="60" cy="60" r="50" fill="none" stroke="rgba(255,255,255,.08)" strokeWidth="5" />
-        <circle
-          cx="60"
-          cy="60"
-          r="50"
-          fill="none"
-          stroke="#39FF14"
-          strokeWidth="5"
-          strokeLinecap="square"
-          strokeDasharray={`${valor * 3.1416} 314.16`}
-          className="drop-shadow-[0_0_5px_rgba(57,255,20,.7)]"
-        />
-      </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className="font-mono text-3xl font-light text-[#39FF14]">
-          {percentual.toLocaleString("pt-BR", { maximumFractionDigits: 0 })}%
-        </span>
-        <span className="mt-1 text-[7px] uppercase tracking-[0.15em] text-white/30">Realizado</span>
-      </div>
     </div>
   );
 }

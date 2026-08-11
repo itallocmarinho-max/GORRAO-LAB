@@ -18,11 +18,14 @@ import { Upload, RefreshCw, Trash2, ChevronRight, Check, Plus, Pencil, ArrowUpDo
 import { vendasBulkImport, vendasList, vendasBatchesList, vendasBatchDelete, vendasHierarquiaList, previsaoSupsList, previsaoCreate, previsaoCreateBulk, previsaoGerentesList, previsaoDelete, previsaoUpdate, produtosPrevisaoList, produtoAliasesSugerir, produtoPrevisaoCreate, produtoPrevisaoDelete, produtoPrevisaoToggleAtivo, produtoAliasUpsert, previsaoGroupGet, previsaoGroupUpsert, produtoSolicitar } from "@/functions/vendas.functions";
 import { hierarquiaAliasUpsert, hierarquiaAliasDelete } from "@/functions/leads.functions";
 import { fmtDateTime } from "@/lib/format";
-import { cyberBtnGhost } from "@/lib/cyber-ui";
+import { cyberBtnGhost, cyberOuterBorder } from "@/lib/cyber-ui";
+import { CyberProgressRing } from "@/components/CyberProgressRing";
+import { termosReservaSheetsSync } from "@/functions/google-sheets-vendas.functions";
 
-const cyberTableCard = "rounded-none border border-[#39FF14]/40 bg-black/60 backdrop-blur-md shadow-[0_0_30px_-15px_rgba(57,255,20,0.4)]";
+const cyberTableCard = "rounded-none border border-[#4169E1]/40 bg-black/60 backdrop-blur-md shadow-[0_0_30px_-15px_rgba(57,255,20,0.4)]";
+const cyberBlueOuterCard = `${cyberTableCard} ${cyberOuterBorder}`;
 const cyberTableTitle = "text-sm uppercase tracking-[0.25em] text-[#39FF14] font-bold";
-const cyberTableClass = "[&_th]:text-[#39FF14] [&_th]:uppercase [&_th]:tracking-[0.2em] [&_th]:text-[10px] [&_th]:font-semibold [&_td]:text-white [&_tr]:border-[#39FF14]/20";
+const cyberTableClass = "[&_th]:text-[#39FF14] [&_th]:uppercase [&_th]:tracking-[0.2em] [&_th]:text-[10px] [&_th]:font-semibold [&_td]:text-white [&_tr]:border-[#4169E1]/20";
 
 const fmtNum = (n: number) => new Intl.NumberFormat("pt-BR").format(Math.round(n));
 const fmtNumDec = (n: number) =>
@@ -50,6 +53,43 @@ const realizadoColor = (realizado: number, previsao: number): string | undefined
   return `hsl(${hue.toFixed(0)} 85% 55%)`;
 };
 const saldoColor = (saldo: number): string => saldo < 0 ? "#f43f5e" : "#10b981";
+
+function CanalValores({
+  pdv,
+  cia,
+  total,
+  color,
+  mostrarTotal = false,
+}: {
+  pdv: number;
+  cia: number;
+  total: number;
+  color?: (valor: number) => string;
+  mostrarTotal?: boolean;
+}) {
+  const valores = mostrarTotal
+    ? ([
+        ["PDV", pdv],
+        ["CIA", cia],
+        ["Total", total],
+      ] as const)
+    : ([
+        ["PDV", pdv],
+        ["CIA", cia],
+      ] as const);
+  return (
+    <div className={`mt-3 grid ${mostrarTotal ? "grid-cols-3" : "grid-cols-2"} border-t border-white/10 pt-3 text-center`}>
+      {valores.map(([label, value]) => (
+        <div key={label} className="border-r border-white/10 px-1 last:border-r-0">
+          <div className="text-[8px] font-bold uppercase tracking-[0.14em] text-white/35">{label}</div>
+          <div className="mt-1 font-mono text-sm" style={{ color: color?.(value) }}>
+            {fmtNumDec(value)}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 // Tintas sutis por coluna (paleta do projeto)
 const COL = {
@@ -122,6 +162,19 @@ type Venda = {
   vgv: number;
   unidades: number;
   produto_id: string | null;
+  canal: "pdv" | "cia" | null;
+};
+type TermoReserva = {
+  id: string;
+  pv: string;
+  empreendimento: string | null;
+  data_termo: string | null;
+  superintendente: string | null;
+  gerente: string | null;
+  corretor: string | null;
+  diretor: string | null;
+  unidades: number;
+  canal: "pdv" | "cia" | null;
 };
 type Previsao = {
   id: string;
@@ -133,6 +186,7 @@ type Previsao = {
   preciso_vendas: number;
   realizado: number;
   observacao: string | null;
+  canal: "pdv" | "cia" | null;
 };
 type ProdutoLite = { id: string; nome: string; ativo: boolean };
 type Batch = { id: string; created_at: string; total: number; vgv: number; unidades: number; created_by: string | null };
@@ -206,15 +260,19 @@ function PrevisaoPage() {
   const isAdmin = role === "admin";
 
   const [vendas, setVendas] = useState<Venda[]>([]);
+  const [termosReserva, setTermosReserva] = useState<TermoReserva[]>([]);
   const [previsoes, setPrevisoes] = useState<Previsao[]>([]);
   const [produtos, setProdutos] = useState<ProdutoLite[]>([]);
   const [loading, setLoading] = useState(false);
+  const [atualizandoTermos, setAtualizandoTermos] = useState(false);
 
   const [supFilter, setSupFilter] = useState<string>(ALL);
   const [gerFilter, setGerFilter] = useState<string>(ALL);
   const [corFilter, setCorFilter] = useState<string>(ALL);
+  const [canalFilter, setCanalFilter] = useState<typeof ALL | "pdv" | "cia">(ALL);
   const [dataIni, setDataIni] = useState<string>("");
   const [dataFim, setDataFim] = useState<string>("");
+  const [baseFilter, setBaseFilter] = useState<"todos" | "termos_reserva">("todos");
   const [viewVendas, setViewVendas] = useState<"emp" | "ger">("emp");
   const [supSemanasAberto, setSupSemanasAberto] = useState<string | null>(null);
   const [filtrosAbertos, setFiltrosAbertos] = useState(false);
@@ -234,8 +292,14 @@ function PrevisaoPage() {
     try {
       const { data: { session: fresh } } = await supabase.auth.getSession();
       const tk = fresh?.access_token ?? token;
-      const r = (await vendasList({ data: { token: tk } })) as { vendas: Venda[]; previsoes: Previsao[]; produtos: ProdutoLite[] };
+      const r = (await vendasList({ data: { token: tk } })) as {
+        vendas: Venda[];
+        termosReserva: TermoReserva[];
+        previsoes: Previsao[];
+        produtos: ProdutoLite[];
+      };
       setVendas(r.vendas);
+      setTermosReserva(r.termosReserva ?? []);
       setPrevisoes(r.previsoes);
       setProdutos(r.produtos ?? []);
     } catch (e: any) {
@@ -246,36 +310,71 @@ function PrevisaoPage() {
   }
   useEffect(() => { reload(); /* eslint-disable-next-line */ }, [token]);
 
-  const sups = useMemo(() => Array.from(new Set([...vendas.map(v => v.superintendente), ...previsoes.map(p => p.superintendente)].filter(Boolean) as string[])).sort((a, b) => a.localeCompare(b, "pt-BR")), [vendas, previsoes]);
+  const atualizarTermosReserva = async () => {
+    if (!token || atualizandoTermos) return;
+    setAtualizandoTermos(true);
+    try {
+      const { data: { session: fresh } } = await supabase.auth.getSession();
+      const result = await termosReservaSheetsSync({
+        data: { token: fresh?.access_token ?? token },
+      });
+      toast.success(
+        `${result.synchronized} termo(s) reserva atualizado(s)` +
+          (result.removed ? `; ${result.removed} removido(s)` : ""),
+      );
+      await reload();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Erro ao atualizar termos reserva");
+    } finally {
+      setAtualizandoTermos(false);
+    }
+  };
+
+  const sups = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          [
+            ...vendas.map((v) => v.superintendente),
+            ...previsoes.map((p) => p.superintendente),
+            ...termosReserva.map((termo) => termo.superintendente),
+          ].filter(Boolean) as string[],
+        ),
+      ).sort((a, b) => a.localeCompare(b, "pt-BR")),
+    [vendas, previsoes, termosReserva],
+  );
   const gers = useMemo(() => {
     const set = new Set<string>();
-    for (const v of vendas) {
-      if (!v.gerente) continue;
-      if (supFilter !== ALL && v.superintendente !== supFilter) continue;
-      set.add(v.gerente);
+    for (const row of [...vendas, ...termosReserva]) {
+      if (!row.gerente) continue;
+      if (supFilter !== ALL && row.superintendente !== supFilter) continue;
+      if (canalFilter !== ALL && row.canal !== canalFilter) continue;
+      set.add(row.gerente);
     }
     return Array.from(set).sort((a, b) => a.localeCompare(b, "pt-BR"));
-  }, [vendas, supFilter]);
+  }, [vendas, termosReserva, supFilter, canalFilter]);
   const corretores = useMemo(() => {
     const set = new Set<string>();
-    for (const v of vendas) {
-      if (!v.corretor) continue;
-      if (supFilter !== ALL && v.superintendente !== supFilter) continue;
-      if (gerFilter !== ALL && v.gerente !== gerFilter) continue;
-      set.add(v.corretor);
+    for (const row of [...vendas, ...termosReserva]) {
+      if (!row.corretor) continue;
+      if (supFilter !== ALL && row.superintendente !== supFilter) continue;
+      if (gerFilter !== ALL && row.gerente !== gerFilter) continue;
+      if (canalFilter !== ALL && row.canal !== canalFilter) continue;
+      set.add(row.corretor);
     }
     return Array.from(set).sort((a, b) => a.localeCompare(b, "pt-BR"));
-  }, [vendas, supFilter, gerFilter]);
+  }, [vendas, termosReserva, supFilter, gerFilter, canalFilter]);
 
   // ===== Filtros aplicados =====
   const vendasF = useMemo(() => vendas.filter((v) => {
     if (supFilter !== ALL && v.superintendente !== supFilter) return false;
     if (gerFilter !== ALL && v.gerente !== gerFilter) return false;
     if (corFilter !== ALL && v.corretor !== corFilter) return false;
+    if (canalFilter !== ALL && v.canal !== canalFilter) return false;
     if (dataIni && (!v.data_assinatura || v.data_assinatura < dataIni)) return false;
     if (dataFim && (!v.data_assinatura || v.data_assinatura > dataFim)) return false;
     return true;
-  }), [vendas, supFilter, gerFilter, corFilter, dataIni, dataFim]);
+  }), [vendas, supFilter, gerFilter, corFilter, canalFilter, dataIni, dataFim]);
 
   const previsoesF = useMemo(() => previsoes.filter((p) => {
     if (supFilter !== ALL && p.superintendente !== supFilter) return false;
@@ -284,16 +383,70 @@ function PrevisaoPage() {
     return true;
   }), [previsoes, supFilter, dataIni, dataFim]);
 
+  const termosReservaF = useMemo(
+    () =>
+      termosReserva.filter((termo) => {
+        if (supFilter !== ALL && termo.superintendente !== supFilter) return false;
+        if (gerFilter !== ALL && termo.gerente !== gerFilter) return false;
+        if (corFilter !== ALL && termo.corretor !== corFilter) return false;
+        if (canalFilter !== ALL && termo.canal !== canalFilter) return false;
+        if (dataIni && (!termo.data_termo || termo.data_termo < dataIni)) return false;
+        if (dataFim && (!termo.data_termo || termo.data_termo > dataFim)) return false;
+        return true;
+      }),
+    [termosReserva, supFilter, gerFilter, corFilter, canalFilter, dataIni, dataFim],
+  );
+
   const totalPrevisao = useMemo(() => previsoesF.reduce((a, p) => a + Number(p.preciso_vendas || 0), 0), [previsoesF]);
   const totalRealizado = useMemo(() => vendasF.reduce((a, v) => a + Number(v.unidades || 0), 0), [vendasF]);
+  const totalTermosReserva = useMemo(
+    () => termosReservaF.reduce((total, termo) => total + Number(termo.unidades || 0), 0),
+    [termosReservaF],
+  );
   const saldo = totalRealizado - totalPrevisao;
+  const resumoCanais = useMemo(() => {
+    const total = (rows: Array<{ canal: "pdv" | "cia" | null }>, value: (row: any) => number, canal?: "pdv" | "cia") =>
+      rows.reduce(
+        (sum, row) => sum + (!canal || row.canal === canal ? Number(value(row) || 0) : 0),
+        0,
+      );
+    const build = (canal?: "pdv" | "cia") => {
+      const previsao = total(previsoesF, (row) => row.preciso_vendas, canal);
+      const realizado = total(vendasF, (row) => row.unidades, canal);
+      return {
+        previsao,
+        realizado,
+        saldo: realizado - previsao,
+        termoReserva: total(termosReservaF, (row) => row.unidades, canal),
+      };
+    };
+    return { pdv: build("pdv"), cia: build("cia"), total: build() };
+  }, [previsoesF, vendasF, termosReservaF]);
+  const percentualRealizado = totalPrevisao > 0 ? (totalRealizado / totalPrevisao) * 100 : 0;
+  const termosSemCanal = Math.max(
+    0,
+    resumoCanais.total.termoReserva -
+      resumoCanais.pdv.termoReserva -
+      resumoCanais.cia.termoReserva,
+  );
+  const preenchimentoPizza = Math.max(0, Math.min(percentualRealizado, 100));
+  const corRealizado = realizadoColor(totalRealizado, totalPrevisao) ?? "#39FF14";
 
   // ===== Tabela: Superintendente -> Gerente =====
   const tabelaSup = useMemo(() => {
-    const map = new Map<string, { previsao: number; realizado: number; gerentes: Map<string, { previsao: number; realizado: number }> }>();
+    const map = new Map<
+      string,
+      {
+        previsao: number;
+        realizado: number;
+        termoReserva: number;
+        gerentes: Map<string, { previsao: number; realizado: number }>;
+      }
+    >();
     for (const p of previsoesF) {
       const k = p.superintendente || "—";
-      if (!map.has(k)) map.set(k, { previsao: 0, realizado: 0, gerentes: new Map() });
+      if (!map.has(k))
+        map.set(k, { previsao: 0, realizado: 0, termoReserva: 0, gerentes: new Map() });
       const s = map.get(k)!;
       s.previsao += Number(p.preciso_vendas || 0);
       if (p.gerente) {
@@ -304,18 +457,26 @@ function PrevisaoPage() {
     }
     for (const v of vendasF) {
       const k = v.superintendente || "—";
-      if (!map.has(k)) map.set(k, { previsao: 0, realizado: 0, gerentes: new Map() });
+      if (!map.has(k))
+        map.set(k, { previsao: 0, realizado: 0, termoReserva: 0, gerentes: new Map() });
       const s = map.get(k)!;
       s.realizado += Number(v.unidades || 0);
       const gk = v.gerente || "—";
       if (!s.gerentes.has(gk)) s.gerentes.set(gk, { previsao: 0, realizado: 0 });
       s.gerentes.get(gk)!.realizado += Number(v.unidades || 0);
     }
+    for (const termo of termosReservaF) {
+      const k = termo.superintendente || "—";
+      if (!map.has(k))
+        map.set(k, { previsao: 0, realizado: 0, termoReserva: 0, gerentes: new Map() });
+      map.get(k)!.termoReserva += Number(termo.unidades || 0);
+    }
     return Array.from(map.entries())
       .map(([nome, x]) => ({
         nome,
         previsao: x.previsao,
         realizado: x.realizado,
+        termoReserva: x.termoReserva,
         saldo: x.realizado - x.previsao,
         pct: x.previsao > 0 ? x.realizado / x.previsao : 0,
         gerentes: Array.from(x.gerentes.entries()).map(([gn, gx]) => ({
@@ -326,7 +487,15 @@ function PrevisaoPage() {
           pct: gx.previsao > 0 ? gx.realizado / gx.previsao : 0,
         })),
       }));
-  }, [previsoesF, vendasF]);
+  }, [previsoesF, vendasF, termosReservaF]);
+
+  const tabelaSupVisivel = useMemo(
+    () =>
+      baseFilter === "termos_reserva"
+        ? tabelaSup.filter((sup) => sup.termoReserva > 0)
+        : tabelaSup,
+    [baseFilter, tabelaSup],
+  );
 
   // ===== Tabela: Empreendimento =====
   const tabelaEmp = useMemo(() => {
@@ -388,26 +557,39 @@ function PrevisaoPage() {
     <div className="space-y-8">
       <div className="flex items-center justify-end gap-2 flex-wrap">
         {canEdit && <NovaPrevisaoDialog token={token} onDone={reload} isAdmin={isAdmin} />}
+        {isAdmin && (
+          <Button
+            size="sm"
+            className={cyberBtnGhost}
+            onClick={atualizarTermosReserva}
+            disabled={atualizandoTermos}
+          >
+            <RefreshCw className={`mr-2 h-3.5 w-3.5 ${atualizandoTermos ? "animate-spin" : ""}`} />
+            Atualizar termo reserva
+          </Button>
+        )}
         <div ref={filtrosRef} className="relative">
           <Button size="sm" className={cyberBtnGhost} onClick={() => setFiltrosAbertos((aberto) => !aberto)}>
             <span className="mr-2 text-[#39FF14]">{filtrosAbertos ? "X" : "/ /"}</span> Filtro
           </Button>
-          <div className={`absolute right-0 top-[calc(100%+10px)] z-50 w-[min(90vw,340px)] space-y-3 border border-[#39FF14]/35 bg-black/95 p-4 shadow-[0_0_40px_rgba(57,255,20,0.14)] backdrop-blur-2xl transition-all ${filtrosAbertos ? "visible translate-y-0 opacity-100" : "invisible -translate-y-2 opacity-0"}`}>
-            <div className="border-b border-[#39FF14]/20 pb-2 text-[9px] uppercase tracking-[0.25em] text-white/40">/ / FILTROS</div>
+          <div className={`absolute right-0 top-[calc(100%+10px)] z-50 w-[min(90vw,340px)] space-y-3 border border-[#4169E1]/35 bg-black/95 p-4 shadow-[0_0_40px_rgba(57,255,20,0.14)] backdrop-blur-2xl transition-all ${filtrosAbertos ? "visible translate-y-0 opacity-100" : "invisible -translate-y-2 opacity-0"}`}>
+            <div className="border-b border-[#4169E1]/20 pb-2 text-[9px] uppercase tracking-[0.25em] text-white/40">/ / FILTROS</div>
             <div className="space-y-1">
               <Label className="text-[9px] uppercase tracking-[0.16em] text-white/45">Superintendente</Label>
-              <Select value={supFilter} onValueChange={(v) => { setSupFilter(v); setGerFilter(ALL); setCorFilter(ALL); }}><SelectTrigger className="rounded-none border-[#39FF14]/30 bg-black text-white"><SelectValue /></SelectTrigger><SelectContent className="rounded-none border-[#39FF14]/30 bg-black text-white"><SelectItem value={ALL}>Todos</SelectItem>{sups.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent></Select>
+              <Select value={supFilter} onValueChange={(v) => { setSupFilter(v); setGerFilter(ALL); setCorFilter(ALL); }}><SelectTrigger className="rounded-none border-[#4169E1]/30 bg-black text-white"><SelectValue /></SelectTrigger><SelectContent className="rounded-none border-[#4169E1]/30 bg-black text-white"><SelectItem value={ALL}>Todos</SelectItem>{sups.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent></Select>
             </div>
-            <div className="space-y-1"><Label className="text-[9px] uppercase tracking-[0.16em] text-white/45">Gerente</Label><Select value={gerFilter} onValueChange={(v) => { setGerFilter(v); setCorFilter(ALL); }}><SelectTrigger className="rounded-none border-[#39FF14]/30 bg-black text-white"><SelectValue /></SelectTrigger><SelectContent className="rounded-none border-[#39FF14]/30 bg-black text-white"><SelectItem value={ALL}>Todos</SelectItem>{gers.map((g) => <SelectItem key={g} value={g}>{g}</SelectItem>)}</SelectContent></Select></div>
-            <div className="space-y-1"><Label className="text-[9px] uppercase tracking-[0.16em] text-white/45">Corretor</Label><Select value={corFilter} onValueChange={setCorFilter}><SelectTrigger className="rounded-none border-[#39FF14]/30 bg-black text-white"><SelectValue /></SelectTrigger><SelectContent className="rounded-none border-[#39FF14]/30 bg-black text-white"><SelectItem value={ALL}>Todos</SelectItem>{corretores.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent></Select></div>
-            <div className="grid grid-cols-2 gap-2"><div className="space-y-1"><Label className="text-[9px] uppercase tracking-[0.12em] text-white/45">Data inicial</Label><Input type="date" value={dataIni} onChange={(e) => setDataIni(e.target.value)} className="rounded-none border-[#39FF14]/30 bg-black text-white [color-scheme:dark]" /></div><div className="space-y-1"><Label className="text-[9px] uppercase tracking-[0.12em] text-white/45">Data final</Label><Input type="date" value={dataFim} onChange={(e) => setDataFim(e.target.value)} className="rounded-none border-[#39FF14]/30 bg-black text-white [color-scheme:dark]" /></div></div>
-            <Button className={`${cyberBtnGhost} w-full`} onClick={() => { setSupFilter(ALL); setGerFilter(ALL); setCorFilter(ALL); setDataIni(""); setDataFim(""); }}>Limpar filtros</Button>
+            <div className="space-y-1"><Label className="text-[9px] uppercase tracking-[0.16em] text-white/45">Gerente</Label><Select value={gerFilter} onValueChange={(v) => { setGerFilter(v); setCorFilter(ALL); }}><SelectTrigger className="rounded-none border-[#4169E1]/30 bg-black text-white"><SelectValue /></SelectTrigger><SelectContent className="rounded-none border-[#4169E1]/30 bg-black text-white"><SelectItem value={ALL}>Todos</SelectItem>{gers.map((g) => <SelectItem key={g} value={g}>{g}</SelectItem>)}</SelectContent></Select></div>
+            <div className="space-y-1"><Label className="text-[9px] uppercase tracking-[0.16em] text-white/45">Corretor</Label><Select value={corFilter} onValueChange={setCorFilter}><SelectTrigger className="rounded-none border-[#4169E1]/30 bg-black text-white"><SelectValue /></SelectTrigger><SelectContent className="rounded-none border-[#4169E1]/30 bg-black text-white"><SelectItem value={ALL}>Todos</SelectItem>{corretores.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent></Select></div>
+            <div className="space-y-1"><Label className="text-[9px] uppercase tracking-[0.16em] text-white/45">Canal</Label><Select value={canalFilter} onValueChange={(value) => { setCanalFilter(value as typeof ALL | "pdv" | "cia"); setGerFilter(ALL); setCorFilter(ALL); }}><SelectTrigger className="rounded-none border-[#4169E1]/30 bg-black text-white"><SelectValue /></SelectTrigger><SelectContent className="rounded-none border-[#4169E1]/30 bg-black text-white"><SelectItem value={ALL}>Todos os canais</SelectItem><SelectItem value="pdv">PDV</SelectItem><SelectItem value="cia">CIA</SelectItem></SelectContent></Select></div>
+            <div className="space-y-1"><Label className="text-[9px] uppercase tracking-[0.16em] text-white/45">Exibição</Label><Select value={baseFilter} onValueChange={(value) => setBaseFilter(value as "todos" | "termos_reserva")}><SelectTrigger className="rounded-none border-[#4169E1]/30 bg-black text-white"><SelectValue /></SelectTrigger><SelectContent className="rounded-none border-[#4169E1]/30 bg-black text-white"><SelectItem value="todos">Todos os dados</SelectItem><SelectItem value="termos_reserva">Somente termos reserva</SelectItem></SelectContent></Select></div>
+            <div className="grid grid-cols-2 gap-2"><div className="space-y-1"><Label className="text-[9px] uppercase tracking-[0.12em] text-white/45">{baseFilter === "termos_reserva" ? "Assinatura termo · início" : "Data inicial"}</Label><Input type="date" value={dataIni} onChange={(e) => setDataIni(e.target.value)} className="rounded-none border-[#4169E1]/30 bg-black text-white [color-scheme:dark]" /></div><div className="space-y-1"><Label className="text-[9px] uppercase tracking-[0.12em] text-white/45">{baseFilter === "termos_reserva" ? "Assinatura termo · fim" : "Data final"}</Label><Input type="date" value={dataFim} onChange={(e) => setDataFim(e.target.value)} className="rounded-none border-[#4169E1]/30 bg-black text-white [color-scheme:dark]" /></div></div>
+            <Button className={`${cyberBtnGhost} w-full`} onClick={() => { setSupFilter(ALL); setGerFilter(ALL); setCorFilter(ALL); setCanalFilter(ALL); setBaseFilter("todos"); setDataIni(""); setDataFim(""); }}>Limpar filtros</Button>
           </div>
         </div>
       </div>
 
       <Tabs defaultValue="resumo" className="space-y-4">
-        <TabsList className="rounded-none border border-[#39FF14]/30 bg-black/60 backdrop-blur-md p-1 h-auto">
+        <TabsList className="rounded-none border border-[#4169E1]/30 bg-black/60 backdrop-blur-md p-1 h-auto">
           <TabsTrigger value="resumo" className="rounded-none uppercase tracking-[0.25em] text-[10px] data-[state=active]:bg-[#39FF14] data-[state=active]:text-black text-gray-400">Resumo</TabsTrigger>
           {isAdmin && <TabsTrigger value="vinculo" className="rounded-none uppercase tracking-[0.25em] text-[10px] data-[state=active]:bg-[#39FF14] data-[state=active]:text-black text-gray-400">Vínculo</TabsTrigger>}
         </TabsList>
@@ -420,8 +602,8 @@ function PrevisaoPage() {
               <div className="space-y-1">
                 <Label className="text-xs">Superintendente</Label>
                 <Select value={supFilter} onValueChange={(v) => { setSupFilter(v); setGerFilter(ALL); setCorFilter(ALL); }}>
-                  <SelectTrigger className="rounded-none border-[#39FF14]/30 bg-black/55 text-white/95 backdrop-blur-sm focus:border-[#39FF14] focus:ring-0 h-9"><SelectValue /></SelectTrigger>
-                  <SelectContent className="rounded-none bg-black/92 border-[#39FF14]/30 text-white">
+                  <SelectTrigger className="rounded-none border-[#4169E1]/30 bg-black/55 text-white/95 backdrop-blur-sm focus:border-[#4169E1] focus:ring-0 h-9"><SelectValue /></SelectTrigger>
+                  <SelectContent className="rounded-none bg-black/92 border-[#4169E1]/30 text-white">
                     <SelectItem value={ALL}>Todos</SelectItem>
                     {sups.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
                   </SelectContent>
@@ -430,8 +612,8 @@ function PrevisaoPage() {
               <div className="space-y-1">
                 <Label className="text-xs">Gerente</Label>
                 <Select value={gerFilter} onValueChange={(v) => { setGerFilter(v); setCorFilter(ALL); }}>
-                  <SelectTrigger className="rounded-none border-[#39FF14]/30 bg-black/55 text-white/95 backdrop-blur-sm focus:border-[#39FF14] focus:ring-0 h-9"><SelectValue /></SelectTrigger>
-                  <SelectContent className="rounded-none bg-black/92 border-[#39FF14]/30 text-white">
+                  <SelectTrigger className="rounded-none border-[#4169E1]/30 bg-black/55 text-white/95 backdrop-blur-sm focus:border-[#4169E1] focus:ring-0 h-9"><SelectValue /></SelectTrigger>
+                  <SelectContent className="rounded-none bg-black/92 border-[#4169E1]/30 text-white">
                     <SelectItem value={ALL}>Todos</SelectItem>
                     {gers.map((g) => <SelectItem key={g} value={g}>{g}</SelectItem>)}
                   </SelectContent>
@@ -440,8 +622,8 @@ function PrevisaoPage() {
               <div className="space-y-1">
                 <Label className="text-xs">Corretor</Label>
                 <Select value={corFilter} onValueChange={setCorFilter}>
-                  <SelectTrigger className="rounded-none border-[#39FF14]/30 bg-black/55 text-white/95 backdrop-blur-sm focus:border-[#39FF14] focus:ring-0 h-9"><SelectValue /></SelectTrigger>
-                  <SelectContent className="rounded-none bg-black/92 border-[#39FF14]/30 text-white">
+                  <SelectTrigger className="rounded-none border-[#4169E1]/30 bg-black/55 text-white/95 backdrop-blur-sm focus:border-[#4169E1] focus:ring-0 h-9"><SelectValue /></SelectTrigger>
+                  <SelectContent className="rounded-none bg-black/92 border-[#4169E1]/30 text-white">
                     <SelectItem value={ALL}>Todos</SelectItem>
                     {corretores.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                   </SelectContent>
@@ -449,11 +631,11 @@ function PrevisaoPage() {
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">Data início (assinatura)</Label>
-                <Input type="date" value={dataIni} onChange={(e) => setDataIni(e.target.value)} className="rounded-none border-[#39FF14]/30 bg-black/55 text-white/95 backdrop-blur-sm focus:border-[#39FF14] focus:ring-0 h-9 [color-scheme:dark]" />
+                <Input type="date" value={dataIni} onChange={(e) => setDataIni(e.target.value)} className="rounded-none border-[#4169E1]/30 bg-black/55 text-white/95 backdrop-blur-sm focus:border-[#4169E1] focus:ring-0 h-9 [color-scheme:dark]" />
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">Data fim (assinatura)</Label>
-                <Input type="date" value={dataFim} onChange={(e) => setDataFim(e.target.value)} className="rounded-none border-[#39FF14]/30 bg-black/55 text-white/95 backdrop-blur-sm focus:border-[#39FF14] focus:ring-0 h-9 [color-scheme:dark]" />
+                <Input type="date" value={dataFim} onChange={(e) => setDataFim(e.target.value)} className="rounded-none border-[#4169E1]/30 bg-black/55 text-white/95 backdrop-blur-sm focus:border-[#4169E1] focus:ring-0 h-9 [color-scheme:dark]" />
               </div>
               <div className="lg:col-span-5">
                 <Button variant="ghost" size="sm" onClick={() => { setSupFilter(ALL); setGerFilter(ALL); setCorFilter(ALL); setDataIni(""); setDataFim(""); }}>Limpar filtros</Button>
@@ -462,40 +644,101 @@ function PrevisaoPage() {
           </Card>}
 
           {/* Resumo */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            {[
-              { label: "Previsão", value: fmtNum(totalPrevisao) },
-              { label: "Vendas feitas", value: fmtNumDec(totalRealizado) },
-              { label: "Saldo", value: fmtNumDec(saldo), color: saldoColor(saldo) },
-              { label: "% Realizado", value: fmtPct(totalRealizado, totalPrevisao), color: realizadoColor(totalRealizado, totalPrevisao) },
-            ].map((c) => (
-              <Card key={c.label} className={cyberTableCard}>
-                <CardHeader className="pb-2">
-                  <CardTitle className={cyberTableTitle}>// {c.label}</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className={`font-mono text-2xl ${c.color ? "" : "text-white"}`} style={c.color ? { color: c.color } : undefined}>{c.value}</div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+          {baseFilter === "todos" ? <Card className={cyberBlueOuterCard}>
+            <CardHeader className="border-b border-[#4169E1]/15 pb-3">
+              <CardTitle className={cyberTableTitle}>// PREVISÃO / REALIZADO</CardTitle>
+            </CardHeader>
+            <CardContent className="grid items-center gap-6 py-5 md:grid-cols-[220px_1fr] lg:grid-cols-[260px_1fr]">
+              <div className="flex justify-center">
+                <CyberProgressRing
+                  percentual={preenchimentoPizza}
+                  valor={fmtPct(totalRealizado, totalPrevisao)}
+                  rotulo="Realizado"
+                  cor={corRealizado}
+                  ariaLabel={`Realizado ${fmtPct(totalRealizado, totalPrevisao)} de uma previsão de 100%`}
+                />
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="border border-[#39FF14] bg-white/[0.025] p-4">
+                  <div className="text-[9px] font-bold uppercase tracking-[0.18em] text-white/40">
+                    Previsão · 100%
+                  </div>
+                  <div className="mt-2 font-mono text-2xl text-white">{fmtNum(totalPrevisao)}</div>
+                </div>
+                <div className="border border-[#39FF14] bg-white/[0.025] p-4">
+                  <div className="text-[9px] font-bold uppercase tracking-[0.18em] text-white/40">
+                    Realizado
+                  </div>
+                  <div className="mt-2 font-mono text-2xl" style={{ color: corRealizado }}>
+                    {fmtNumDec(totalRealizado)}
+                  </div>
+                  <CanalValores pdv={resumoCanais.pdv.realizado} cia={resumoCanais.cia.realizado} total={resumoCanais.total.realizado} color={() => corRealizado} />
+                </div>
+                <div className="border border-[#39FF14] bg-white/[0.025] p-4">
+                  <div className="text-[9px] font-bold uppercase tracking-[0.18em] text-white/40">
+                    Saldo
+                  </div>
+                  <div
+                    className="mt-2 font-mono text-2xl"
+                    style={{ color: saldoColor(saldo) }}
+                  >
+                    {fmtNumDec(saldo)}
+                  </div>
+                </div>
+                <div className="border border-[#39FF14] bg-[#39FF14]/[0.035] p-4">
+                  <div className="text-[9px] font-bold uppercase tracking-[0.18em] text-[#39FF14]/65">
+                    Termo Reserva
+                  </div>
+                  <div className="mt-2 font-mono text-2xl text-[#39FF14]">
+                    {fmtNumDec(totalTermosReserva)}
+                  </div>
+                  <CanalValores pdv={resumoCanais.pdv.termoReserva} cia={resumoCanais.cia.termoReserva} total={resumoCanais.total.termoReserva} />
+                  {termosSemCanal > 0 && <div className="mt-2 text-center text-[8px] uppercase tracking-[0.12em] text-amber-300/65">{fmtNumDec(termosSemCanal)} sem canal cadastrado</div>}
+                </div>
+                <div className="flex items-center gap-5 border-t border-white/10 pt-3 text-[8px] uppercase tracking-[0.14em] text-white/35 sm:col-span-2 xl:col-span-4">
+                  <span className="flex items-center gap-2">
+                    <span className="h-2.5 w-2.5 rounded-full bg-white/10" /> Previsão restante
+                  </span>
+                  <span className="flex items-center gap-2">
+                    <span className="h-2.5 w-2.5 rounded-full" style={{ background: corRealizado }} />
+                    Vendas realizadas
+                  </span>
+                </div>
+              </div>
+            </CardContent>
+          </Card> : <Card className={cyberBlueOuterCard}>
+            <CardHeader className="border-b border-[#4169E1]/15 pb-3">
+              <CardTitle className={cyberTableTitle}>// TERMOS RESERVA</CardTitle>
+            </CardHeader>
+            <CardContent className="py-7">
+              <div className="text-[9px] font-bold uppercase tracking-[0.2em] text-white/40">Volume no período</div>
+              <div className="mt-2 font-mono text-5xl text-[#39FF14]">{fmtNumDec(totalTermosReserva)}</div>
+              <div className="max-w-md"><CanalValores pdv={resumoCanais.pdv.termoReserva} cia={resumoCanais.cia.termoReserva} total={resumoCanais.total.termoReserva} /></div>
+              {termosSemCanal > 0 && <div className="mt-2 text-[9px] uppercase tracking-[0.14em] text-amber-300/65">{fmtNumDec(termosSemCanal)} sem canal cadastrado</div>}
+              <div className="mt-3 text-[9px] uppercase tracking-[0.15em] text-white/35">Indicador avulso · não altera previsão, realizado ou saldo</div>
+            </CardContent>
+          </Card>}
 
       {/* Tabela superintendentes -> gerentes */}
-      <section className="border border-[#39FF14]/25 bg-black/55 p-4 backdrop-blur-md">
-        <div className="mb-3 flex items-center justify-between border-b border-[#39FF14]/15 pb-3"><h2 className={cyberTableTitle}>/ / SUPERINTENDENTES</h2><span className="text-[8px] uppercase tracking-[0.16em] text-white/30">Clique para filtrar os lançamentos</span></div>
+      <section className="border border-[#4169E1]/55 bg-black/55 p-4 backdrop-blur-md">
+        <div className="mb-3 flex items-center justify-between border-b border-[#4169E1]/15 pb-3"><h2 className={cyberTableTitle}>/ / SUPERINTENDENTES</h2><span className="text-[8px] uppercase tracking-[0.16em] text-white/30">{baseFilter === "todos" ? "Clique para filtrar os lançamentos" : "Somente termos reserva no período"}</span></div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-          {[...tabelaSup].sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR")).map((sup) => (
-            <button key={sup.nome} type="button" onClick={() => setSupSemanasAberto(sup.nome)} className="min-w-0 border border-white/10 bg-white/[0.025] p-3 text-left transition hover:border-[#39FF14]/70 hover:bg-[#39FF14]/[0.035]">
+          {[...tabelaSupVisivel].sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR")).map((sup) => (
+            <button key={sup.nome} type="button" onClick={() => baseFilter === "todos" && setSupSemanasAberto(sup.nome)} className={`min-w-0 border border-[#39FF14] bg-white/[0.025] p-3 text-left transition ${baseFilter === "todos" ? "hover:border-[#39FF14]/70 hover:bg-[#39FF14]/[0.035]" : "cursor-default"}`}>
               <div className="truncate border-b border-white/10 pb-2 text-xs font-bold uppercase tracking-[0.16em] text-[#39FF14]" title={sup.nome}>{sup.nome}</div>
               <div className="mt-3 space-y-2 text-[10px] uppercase tracking-[0.1em]">
-                <div className="flex justify-between gap-2"><span className="text-white/45">Previsão</span><strong className="font-mono text-white">{fmtNum(sup.previsao)}</strong></div>
-                <div className="flex justify-between gap-2"><span className="text-white/45">Realizado</span><strong className="font-mono" style={{ color: realizadoColor(sup.realizado, sup.previsao) }}>{fmtNumDec(sup.realizado)}</strong></div>
-                <div className="flex justify-between gap-2"><span className="text-white/45">% realizado</span><strong className="font-mono" style={{ color: realizadoColor(sup.realizado, sup.previsao) }}>{fmtPct(sup.realizado, sup.previsao)}</strong></div>
-                <div className="flex justify-between gap-2 border-t border-white/10 pt-2"><span className="text-white/45">Saldo</span><strong className="font-mono" style={{ color: saldoColor(sup.saldo) }}>{fmtNumDec(sup.saldo)}</strong></div>
+                {baseFilter === "todos" && <>
+                  <div className="flex justify-between gap-2"><span className="text-white/45">Previsão</span><strong className="font-mono text-white">{fmtNum(sup.previsao)}</strong></div>
+                  <div className="flex justify-between gap-2"><span className="text-white/45">Realizado</span><strong className="font-mono" style={{ color: realizadoColor(sup.realizado, sup.previsao) }}>{fmtNumDec(sup.realizado)}</strong></div>
+                  <div className="flex justify-between gap-2"><span className="text-white/45">% realizado</span><strong className="font-mono" style={{ color: realizadoColor(sup.realizado, sup.previsao) }}>{fmtPct(sup.realizado, sup.previsao)}</strong></div>
+                  <div className="flex justify-between gap-2 border-t border-white/10 pt-2"><span className="text-white/45">Saldo</span><strong className="font-mono" style={{ color: saldoColor(sup.saldo) }}>{fmtNumDec(sup.saldo)}</strong></div>
+                </>}
+                <div className={`flex justify-between gap-2 ${baseFilter === "todos" ? "border-t border-[#4169E1]/20 pt-2" : "pt-1"}`}><span className="text-[#39FF14]/65">Termo Reserva</span><strong className="font-mono text-[#39FF14]">{fmtNumDec(sup.termoReserva)}</strong></div>
               </div>
             </button>
           ))}
-          {tabelaSupSorted.length === 0 && <div className="border border-dashed border-white/10 p-6 text-center text-[10px] uppercase tracking-widest text-white/35 xl:col-span-6">Sem dados para os filtros selecionados</div>}
+          {tabelaSupVisivel.length === 0 && <div className="border border-dashed border-white/10 p-6 text-center text-[10px] uppercase tracking-widest text-white/35 xl:col-span-6">Sem dados para os filtros selecionados</div>}
         </div>
       </section>
 
@@ -527,14 +770,14 @@ function PrevisaoPage() {
       </Card>}
 
       {/* Tabela vendas (toggle) */}
-      <Card className={cyberTableCard}>
+      {baseFilter === "todos" && <Card className={cyberBlueOuterCard}>
         <CardHeader>
           <CardTitle className={cyberTableTitle}>// VENDAS POR PRODUTO E GERENTE</CardTitle>
         </CardHeader>
         <CardContent>
           <ProdutoEmpreendimentoTable rows={tabelaEmpSorted} produtos={produtos} gerentes={tabelaGerSorted} vendas={vendasF} previsoes={previsoesF} />
         </CardContent>
-      </Card>
+      </Card>}
 
       <SupSemanasDialog open={!!supSemanasAberto} onOpenChange={(aberto) => !aberto && setSupSemanasAberto(null)} superintendente={supSemanasAberto} previsoes={previsoesF} produtos={produtos} token={token} canEdit={canEdit} onChange={reload} />
         </TabsContent>
@@ -1010,26 +1253,26 @@ function NovaPrevisaoDialog({ token, onDone, isAdmin }: { token: string; onDone:
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <Button size="sm" className="rounded-none border border-[#39FF14] bg-[#39FF14] font-bold uppercase tracking-[0.14em] text-black hover:bg-[#39FF14]/85" onClick={() => setOpen(true)}>
+      <Button size="sm" className="rounded-none border border-[#4169E1] bg-[#39FF14] font-bold uppercase tracking-[0.14em] text-black hover:bg-[#39FF14]/85" onClick={() => setOpen(true)}>
         <Plus className="h-4 w-4 mr-2" /> Nova previsão
       </Button>
-      <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto rounded-none border border-[#39FF14]/40 bg-black/95 text-white shadow-[0_0_45px_rgba(57,255,20,0.14)] backdrop-blur-2xl">
+      <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto rounded-none border border-[#4169E1]/40 bg-black/95 text-white shadow-[0_0_45px_rgba(57,255,20,0.14)] backdrop-blur-2xl">
         <DialogHeader>
           <DialogTitle className="text-sm font-bold uppercase tracking-[0.24em] text-[#39FF14]">/ / NOVA PREVISÃO</DialogTitle>
           <DialogDescription className="text-[10px] uppercase tracking-[0.12em] text-white/40">Lance a previsão de vendas por gerente para uma semana do mês.</DialogDescription>
         </DialogHeader>
         {/* Resumo no topo */}
-        <div className="grid grid-cols-2 gap-2 border border-[#39FF14]/20 bg-[#39FF14]/[0.025] p-3 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-2 border border-[#4169E1]/20 bg-[#39FF14]/[0.025] p-3 sm:grid-cols-4">
           <Badge variant="outline" className="text-xs px-2 py-1">
             Superintendente: <span className="ml-1 font-medium">{supNome || "—"}</span>
           </Badge>
           <Badge variant="outline" className="text-xs px-2 py-1">
             Semana: <span className="ml-1 font-medium">{semanas[parseInt(semanaIdx, 10)] ? `${fmtDateBR(semanas[parseInt(semanaIdx, 10)].ini)} a ${fmtDateBR(semanas[parseInt(semanaIdx, 10)].fim)}` : "—"}</span>
           </Badge>
-          <Badge variant="outline" className="text-xs px-2 py-1 border-[#39FF14]/30 bg-[#39FF14]/5 text-[#39FF14]">
+          <Badge variant="outline" className="text-xs px-2 py-1 border-[#4169E1]/30 bg-[#39FF14]/5 text-[#39FF14]">
             Produtos: <span className="ml-1 font-mono">{produtosPreenchidos}</span>
           </Badge>
-          <Badge variant="outline" className="text-xs px-2 py-1 border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">
+          <Badge variant="outline" className="text-xs px-2 py-1 border-[#4169E1]/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">
             Total previsto: <span className="ml-1 font-mono">{fmtNum(totalUnidades)}</span>
           </Badge>
         </div>
@@ -1077,7 +1320,7 @@ function NovaPrevisaoDialog({ token, onDone, isAdmin }: { token: string; onDone:
             </Select>
           </div>
           <div className="space-y-2">
-            <div className="flex items-center justify-between"><Label className="text-xs">Produtos e quantidade prevista</Label><Button type="button" size="sm" variant="outline" className="h-8 rounded-none border-[#39FF14]/35 text-[9px] uppercase tracking-[0.14em] text-[#39FF14]" onClick={() => setLinhasProdutos((linhas) => [...linhas, { id: crypto.randomUUID(), produtoId: "", quantidade: "" }])}><Plus className="mr-1 h-3 w-3" /> Produto</Button></div>
+            <div className="flex items-center justify-between"><Label className="text-xs">Produtos e quantidade prevista</Label><Button type="button" size="sm" variant="outline" className="h-8 rounded-none border-[#4169E1]/35 text-[9px] uppercase tracking-[0.14em] text-[#39FF14]" onClick={() => setLinhasProdutos((linhas) => [...linhas, { id: crypto.randomUUID(), produtoId: "", quantidade: "" }])}><Plus className="mr-1 h-3 w-3" /> Produto</Button></div>
               <div className="max-h-72 space-y-2 overflow-y-auto border border-white/10 p-2">
                 {linhasProdutos.map((linha, index) => (
                   <div key={linha.id} className="grid grid-cols-[1fr_100px_32px] items-center gap-2 border border-white/10 bg-white/[0.025] p-2">
@@ -1086,14 +1329,14 @@ function NovaPrevisaoDialog({ token, onDone, isAdmin }: { token: string; onDone:
                       if (index === linhas.length - 1 && produtoId) atualizadas.push({ id: crypto.randomUUID(), produtoId: "", quantidade: "" });
                       return atualizadas;
                     })}>
-                      <SelectTrigger className="rounded-none border-[#39FF14]/25 bg-black"><SelectValue placeholder="Selecionar produto" /></SelectTrigger>
-                      <SelectContent className="rounded-none border-[#39FF14]/30 bg-black text-white">{produtosDisponiveis.filter((produto) => produto.id === linha.produtoId || !linhasProdutos.some((outra) => outra.produtoId === produto.id)).map((produto) => <SelectItem key={produto.id} value={produto.id}>{produto.nome}</SelectItem>)}</SelectContent>
+                      <SelectTrigger className="rounded-none border-[#4169E1]/25 bg-black"><SelectValue placeholder="Selecionar produto" /></SelectTrigger>
+                      <SelectContent className="rounded-none border-[#4169E1]/30 bg-black text-white">{produtosDisponiveis.filter((produto) => produto.id === linha.produtoId || !linhasProdutos.some((outra) => outra.produtoId === produto.id)).map((produto) => <SelectItem key={produto.id} value={produto.id}>{produto.nome}</SelectItem>)}</SelectContent>
                     </Select>
                     <Input
                       type="number"
                       inputMode="numeric"
                       min={0}
-                      className="h-9 rounded-none border-[#39FF14]/25 bg-black"
+                      className="h-9 rounded-none border-[#4169E1]/25 bg-black"
                       value={linha.quantidade}
                       onChange={(e) => setLinhasProdutos((linhas) => linhas.map((item) => item.id === linha.id ? { ...item, quantidade: e.target.value } : item))}
                       placeholder="0"
@@ -1629,18 +1872,18 @@ function SupSemanasDialog({ open, onOpenChange, superintendente, previsoes, prod
   };
 
   return <Dialog open={open} onOpenChange={(aberto) => { onOpenChange(aberto); if (!aberto) setSemanaSelecionada(null); }}>
-    <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto rounded-none border border-[#39FF14]/40 bg-black/95 text-white shadow-[0_0_45px_rgba(57,255,20,0.14)] backdrop-blur-2xl">
+    <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto rounded-none border border-[#4169E1]/40 bg-black/95 text-white shadow-[0_0_45px_rgba(57,255,20,0.14)] backdrop-blur-2xl">
       <DialogHeader><DialogTitle className="text-sm font-bold uppercase tracking-[0.2em] text-[#39FF14]">/ / {superintendente}</DialogTitle><DialogDescription className="text-white/40">{semanaSelecionada ? "Edite os produtos e quantidades da semana" : "Selecione a semana que deseja abrir"}</DialogDescription></DialogHeader>
       {!semanaSelecionada ? <div className="space-y-2">
         {semanas.map((semana) => {
           const registros = previsoesSup.filter((p) => p.semana_inicio === semana.semana_inicio);
           const totalSemana = registros.reduce((total, registro) => total + Number(registro.preciso_vendas || 0), 0);
-          return <button key={semana.semana_inicio} type="button" onClick={() => abrirSemana(semana.semana_inicio!)} className="flex w-full items-center justify-between border border-white/10 bg-white/[0.025] p-3 text-left transition hover:border-[#39FF14]/60"><div><strong className="text-xs uppercase tracking-[0.14em] text-white">{fmtDateBR(semana.semana_inicio!)} a {semana.semana_fim ? fmtDateBR(semana.semana_fim) : "—"}</strong><div className="mt-1 text-[8px] uppercase tracking-[0.12em] text-white/35">{registros.length} produto(s)</div></div><span className="font-mono text-sm font-bold text-[#39FF14]">{fmtNum(totalSemana)}</span></button>;
+          return <button key={semana.semana_inicio} type="button" onClick={() => abrirSemana(semana.semana_inicio!)} className="flex w-full items-center justify-between border border-white/10 bg-white/[0.025] p-3 text-left transition hover:border-[#4169E1]/60"><div><strong className="text-xs uppercase tracking-[0.14em] text-white">{fmtDateBR(semana.semana_inicio!)} a {semana.semana_fim ? fmtDateBR(semana.semana_fim) : "—"}</strong><div className="mt-1 text-[8px] uppercase tracking-[0.12em] text-white/35">{registros.length} produto(s)</div></div><span className="font-mono text-sm font-bold text-[#39FF14]">{fmtNum(totalSemana)}</span></button>;
         })}
         {semanas.length === 0 && <div className="border border-dashed border-white/10 p-6 text-center text-[10px] uppercase tracking-widest text-white/35">Nenhuma semana lançada</div>}
       </div> : <div className="space-y-3">
         <button type="button" className="text-[9px] uppercase tracking-[0.14em] text-white/40 hover:text-[#39FF14]" onClick={() => setSemanaSelecionada(null)}>← Voltar às semanas</button>
-        <div className="space-y-2">{linhas.map((linha, index) => <div key={linha.key} className="grid grid-cols-[1fr_100px_32px] gap-2 border border-white/10 bg-white/[0.025] p-2"><Select disabled={!canEdit} value={linha.produto_id} onValueChange={(produto_id) => setLinhas((atuais) => { const novas = atuais.map((item) => item.key === linha.key ? { ...item, produto_id } : item); if (index === atuais.length - 1 && produto_id) novas.push({ key: crypto.randomUUID(), produto_id: "", quantidade: "" }); return novas; })}><SelectTrigger className="rounded-none border-[#39FF14]/25 bg-black"><SelectValue placeholder="Selecionar produto" /></SelectTrigger><SelectContent className="rounded-none border-[#39FF14]/30 bg-black text-white">{produtos.filter((produto) => produto.ativo || produto.id === linha.produto_id).map((produto) => <SelectItem key={produto.id} value={produto.id}>{produto.nome}</SelectItem>)}</SelectContent></Select><Input disabled={!canEdit} type="number" min={0} value={linha.quantidade} onChange={(e) => setLinhas((atuais) => atuais.map((item) => item.key === linha.key ? { ...item, quantidade: e.target.value } : item))} className="rounded-none border-[#39FF14]/25 bg-black" /><Button disabled={!canEdit || linhas.length === 1} type="button" variant="ghost" size="icon" onClick={() => { if (linha.id) setIdsRemovidos((ids) => [...ids, linha.id!]); setLinhas((atuais) => atuais.filter((item) => item.key !== linha.key)); }}><X className="h-3 w-3" /></Button></div>)}</div>
+        <div className="space-y-2">{linhas.map((linha, index) => <div key={linha.key} className="grid grid-cols-[1fr_100px_32px] gap-2 border border-white/10 bg-white/[0.025] p-2"><Select disabled={!canEdit} value={linha.produto_id} onValueChange={(produto_id) => setLinhas((atuais) => { const novas = atuais.map((item) => item.key === linha.key ? { ...item, produto_id } : item); if (index === atuais.length - 1 && produto_id) novas.push({ key: crypto.randomUUID(), produto_id: "", quantidade: "" }); return novas; })}><SelectTrigger className="rounded-none border-[#4169E1]/25 bg-black"><SelectValue placeholder="Selecionar produto" /></SelectTrigger><SelectContent className="rounded-none border-[#4169E1]/30 bg-black text-white">{produtos.filter((produto) => produto.ativo || produto.id === linha.produto_id).map((produto) => <SelectItem key={produto.id} value={produto.id}>{produto.nome}</SelectItem>)}</SelectContent></Select><Input disabled={!canEdit} type="number" min={0} value={linha.quantidade} onChange={(e) => setLinhas((atuais) => atuais.map((item) => item.key === linha.key ? { ...item, quantidade: e.target.value } : item))} className="rounded-none border-[#4169E1]/25 bg-black" /><Button disabled={!canEdit || linhas.length === 1} type="button" variant="ghost" size="icon" onClick={() => { if (linha.id) setIdsRemovidos((ids) => [...ids, linha.id!]); setLinhas((atuais) => atuais.filter((item) => item.key !== linha.key)); }}><X className="h-3 w-3" /></Button></div>)}</div>
         {canEdit && <DialogFooter><Button variant="ghost" onClick={() => setSemanaSelecionada(null)}>Cancelar</Button><Button onClick={salvar} disabled={saving}>{saving ? "Salvando..." : "Salvar alterações"}</Button></DialogFooter>}
       </div>}
     </DialogContent>
@@ -1765,7 +2008,7 @@ function PrevisoesLancadasCard({ token, isAdmin, previsoes, onChange }: { token:
       </CardContent>
 
       <Dialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)}>
-        <DialogContent className="rounded-none border border-[#39FF14]/40 bg-black/95 text-white shadow-[0_0_45px_rgba(57,255,20,0.14)] backdrop-blur-2xl">
+        <DialogContent className="rounded-none border border-[#4169E1]/40 bg-black/95 text-white shadow-[0_0_45px_rgba(57,255,20,0.14)] backdrop-blur-2xl">
           <DialogHeader>
             <DialogTitle className="text-sm font-bold uppercase tracking-[0.24em] text-[#39FF14]">/ / EDITAR PREVISÃO</DialogTitle>
             <DialogDescription className="text-white/45">
@@ -1825,8 +2068,8 @@ function ProdutoEmpreendimentoTable({ rows, produtos, gerentes, vendas, previsoe
   const Cabecalho = () => <TableHeader><TableRow><TableHead>Nome</TableHead><TableHead className="text-right">Previsão</TableHead><TableHead className="text-right">Realizado</TableHead><TableHead className="text-right whitespace-nowrap">% Real.</TableHead></TableRow></TableHeader>;
   return (
     <><div className="grid gap-3 lg:grid-cols-2">
-      <section className="flex h-[420px] min-w-0 flex-col border border-white/10 bg-white/[0.02]"><h3 className="border-b border-[#39FF14]/20 px-3 py-3 text-[10px] font-bold uppercase tracking-[0.22em] text-[#39FF14]">/ / Por produto</h3><div className="flex-1 overflow-auto"><Table className={cyberTableClass}><TableHeader><TableRow><TableHead>Produto</TableHead><TableHead className="text-right">Previsão</TableHead><TableHead className="text-right">Realizado</TableHead><TableHead className="text-right whitespace-nowrap">% Real.</TableHead><TableHead className="text-right">Empreendimentos</TableHead></TableRow></TableHeader><TableBody>{produtosRows.map((produto) => <Fragment key={produto.key}><TableRow className="cursor-pointer hover:bg-[#39FF14]/[0.04]" onClick={() => setProdutosAbertos((abertos) => ({ ...abertos, [produto.key]: !abertos[produto.key] }))}><TableCell className="max-w-[190px] font-medium text-[#39FF14]"><span className="mr-2 inline-block text-[9px]">{produtosAbertos[produto.key] ? "▼" : "▶"}</span>{produto.nome}</TableCell><TableCell className="text-right font-mono">{fmtNum(produto.previsao)}</TableCell><TableCell className="text-right font-mono">{fmtNumDec(produto.realizado)}</TableCell><TableCell className="text-right font-mono" style={{ color: realizadoColor(produto.realizado, produto.previsao) }}>{fmtPct(produto.realizado, produto.previsao)}</TableCell><TableCell className="text-right"><Button type="button" size="sm" variant="outline" className="h-7 rounded-none border-[#39FF14]/35 text-[8px] uppercase tracking-[0.12em] text-[#39FF14]" disabled={produto.realizado <= 0} onClick={(event) => { event.stopPropagation(); setProdutoEmpAberto(produto.key); }}>Ver produto</Button></TableCell></TableRow>{produtosAbertos[produto.key] && Array.from(produto.sups.entries()).sort(([a], [b]) => a.localeCompare(b, "pt-BR")).map(([supNome, sup]) => <TableRow key={`${produto.key}-${supNome}`} className="bg-white/[0.025]"><TableCell className="pl-7 text-[10px] font-bold uppercase tracking-[0.1em] text-white/65">{supNome}</TableCell><TableCell className="text-right font-mono text-xs">{fmtNum(sup.previsao)}</TableCell><TableCell className="text-right font-mono text-xs">{fmtNumDec(sup.realizado)}</TableCell><TableCell className="text-right font-mono text-xs" style={{ color: realizadoColor(sup.realizado, sup.previsao) }}>{fmtPct(sup.realizado, sup.previsao)}</TableCell><TableCell /></TableRow>)}</Fragment>)}</TableBody></Table></div></section>
-      <section className="flex h-[420px] min-w-0 flex-col border border-white/10 bg-white/[0.02]"><h3 className="border-b border-[#39FF14]/20 px-3 py-3 text-[10px] font-bold uppercase tracking-[0.22em] text-[#39FF14]">/ / Por gerente</h3><div className="flex-1 overflow-auto"><Table className={cyberTableClass}><Cabecalho /><TableBody>{[...gerentes].sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR")).map((gerente) => <TableRow key={gerente.nome}><TableCell className="max-w-[210px] truncate font-medium" title={`${gerente.nome} — ${gerente.sup || ""}`}><div>{gerente.nome}</div><div className="text-[8px] uppercase tracking-[0.1em] text-white/30">{gerente.sup || "—"}</div></TableCell><TableCell className="text-right font-mono">{fmtNum(gerente.previsao)}</TableCell><TableCell className="text-right font-mono">{fmtNumDec(gerente.realizado)}</TableCell><TableCell className="text-right font-mono" style={{ color: realizadoColor(gerente.realizado, gerente.previsao) }}>{fmtPct(gerente.realizado, gerente.previsao)}</TableCell></TableRow>)}</TableBody></Table></div></section>
-    </div><Dialog open={!!produtoEmpAberto} onOpenChange={(aberto) => !aberto && setProdutoEmpAberto(null)}><DialogContent className="max-w-lg rounded-none border border-[#39FF14]/40 bg-black/95 text-white shadow-[0_0_45px_rgba(57,255,20,0.14)] backdrop-blur-2xl"><DialogHeader><DialogTitle className="text-sm font-bold uppercase tracking-[0.2em] text-[#39FF14]">/ / {produtoSelecionado?.nome}</DialogTitle><DialogDescription className="text-white/40">Empreendimentos que tiveram venda realizada</DialogDescription></DialogHeader><div className="max-h-[55vh] overflow-auto border border-white/10"><Table className={cyberTableClass}><TableHeader><TableRow><TableHead>Empreendimento</TableHead><TableHead className="text-right">Vendas realizadas</TableHead></TableRow></TableHeader><TableBody>{Array.from(empreendimentosSelecionados.entries()).sort(([a], [b]) => a.localeCompare(b, "pt-BR")).map(([nome, realizado]) => <TableRow key={nome}><TableCell>{nome}</TableCell><TableCell className="text-right font-mono text-[#39FF14]">{fmtNumDec(realizado)}</TableCell></TableRow>)}</TableBody></Table></div></DialogContent></Dialog></>
+      <section className="flex h-[420px] min-w-0 flex-col border border-[#39FF14] bg-white/[0.02]"><h3 className="border-b border-[#4169E1]/20 px-3 py-3 text-[10px] font-bold uppercase tracking-[0.22em] text-[#39FF14]">/ / Por produto</h3><div className="flex-1 overflow-auto"><Table className={cyberTableClass}><TableHeader><TableRow><TableHead>Produto</TableHead><TableHead className="text-right">Previsão</TableHead><TableHead className="text-right">Realizado</TableHead><TableHead className="text-right whitespace-nowrap">% Real.</TableHead><TableHead className="text-right">Empreendimentos</TableHead></TableRow></TableHeader><TableBody>{produtosRows.map((produto) => <Fragment key={produto.key}><TableRow className="cursor-pointer hover:bg-[#39FF14]/[0.04]" onClick={() => setProdutosAbertos((abertos) => ({ ...abertos, [produto.key]: !abertos[produto.key] }))}><TableCell className="max-w-[190px] font-medium text-[#39FF14]"><span className="mr-2 inline-block text-[9px]">{produtosAbertos[produto.key] ? "▼" : "▶"}</span>{produto.nome}</TableCell><TableCell className="text-right font-mono">{fmtNum(produto.previsao)}</TableCell><TableCell className="text-right font-mono">{fmtNumDec(produto.realizado)}</TableCell><TableCell className="text-right font-mono" style={{ color: realizadoColor(produto.realizado, produto.previsao) }}>{fmtPct(produto.realizado, produto.previsao)}</TableCell><TableCell className="text-right"><Button type="button" size="sm" variant="outline" className="h-7 rounded-none border-[#4169E1]/35 text-[8px] uppercase tracking-[0.12em] text-[#39FF14]" disabled={produto.realizado <= 0} onClick={(event) => { event.stopPropagation(); setProdutoEmpAberto(produto.key); }}>Ver produto</Button></TableCell></TableRow>{produtosAbertos[produto.key] && Array.from(produto.sups.entries()).sort(([a], [b]) => a.localeCompare(b, "pt-BR")).map(([supNome, sup]) => <TableRow key={`${produto.key}-${supNome}`} className="bg-white/[0.025]"><TableCell className="pl-7 text-[10px] font-bold uppercase tracking-[0.1em] text-white/65">{supNome}</TableCell><TableCell className="text-right font-mono text-xs">{fmtNum(sup.previsao)}</TableCell><TableCell className="text-right font-mono text-xs">{fmtNumDec(sup.realizado)}</TableCell><TableCell className="text-right font-mono text-xs" style={{ color: realizadoColor(sup.realizado, sup.previsao) }}>{fmtPct(sup.realizado, sup.previsao)}</TableCell><TableCell /></TableRow>)}</Fragment>)}</TableBody></Table></div></section>
+      <section className="flex h-[420px] min-w-0 flex-col border border-[#39FF14] bg-white/[0.02]"><h3 className="border-b border-[#4169E1]/20 px-3 py-3 text-[10px] font-bold uppercase tracking-[0.22em] text-[#39FF14]">/ / Por gerente</h3><div className="flex-1 overflow-auto"><Table className={cyberTableClass}><Cabecalho /><TableBody>{[...gerentes].sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR")).map((gerente) => <TableRow key={gerente.nome}><TableCell className="max-w-[210px] truncate font-medium" title={`${gerente.nome} — ${gerente.sup || ""}`}><div>{gerente.nome}</div><div className="text-[8px] uppercase tracking-[0.1em] text-white/30">{gerente.sup || "—"}</div></TableCell><TableCell className="text-right font-mono">{fmtNum(gerente.previsao)}</TableCell><TableCell className="text-right font-mono">{fmtNumDec(gerente.realizado)}</TableCell><TableCell className="text-right font-mono" style={{ color: realizadoColor(gerente.realizado, gerente.previsao) }}>{fmtPct(gerente.realizado, gerente.previsao)}</TableCell></TableRow>)}</TableBody></Table></div></section>
+    </div><Dialog open={!!produtoEmpAberto} onOpenChange={(aberto) => !aberto && setProdutoEmpAberto(null)}><DialogContent className="max-w-lg rounded-none border border-[#4169E1]/40 bg-black/95 text-white shadow-[0_0_45px_rgba(57,255,20,0.14)] backdrop-blur-2xl"><DialogHeader><DialogTitle className="text-sm font-bold uppercase tracking-[0.2em] text-[#39FF14]">/ / {produtoSelecionado?.nome}</DialogTitle><DialogDescription className="text-white/40">Empreendimentos que tiveram venda realizada</DialogDescription></DialogHeader><div className="max-h-[55vh] overflow-auto border border-white/10"><Table className={cyberTableClass}><TableHeader><TableRow><TableHead>Empreendimento</TableHead><TableHead className="text-right">Vendas realizadas</TableHead></TableRow></TableHeader><TableBody>{Array.from(empreendimentosSelecionados.entries()).sort(([a], [b]) => a.localeCompare(b, "pt-BR")).map(([nome, realizado]) => <TableRow key={nome}><TableCell>{nome}</TableCell><TableCell className="text-right font-mono text-[#39FF14]">{fmtNumDec(realizado)}</TableCell></TableRow>)}</TableBody></Table></div></DialogContent></Dialog></>
   );
 }

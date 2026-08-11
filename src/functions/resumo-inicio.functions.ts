@@ -2,6 +2,11 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import {
+  buildVendaAliasIndex,
+  buildVendaCreditos,
+  type VendaHierarquiaAlias,
+} from "@/lib/vendas-hierarquia";
 
 const ResumoInput = z.object({
   token: z.string().min(1),
@@ -205,7 +210,7 @@ export const resumoInicioLoad = createServerFn({ method: "POST" })
       await Promise.all([
         (supabaseAdmin as any)
           .from("vendas_hierarquia_aliases")
-          .select("tipo, alias_normalizado, profile_id, gerente_id"),
+          .select("tipo, alias, alias_normalizado, profile_id, gerente_id, externo"),
         supabaseAdmin
           .from("leads_hierarquia_aliases")
           .select("tipo, alias_normalizado, profile_id, gerente_id"),
@@ -225,6 +230,7 @@ export const resumoInicioLoad = createServerFn({ method: "POST" })
       const supers = new Map<string, string>();
       const managerAliases = new Map<string, string>();
       for (const alias of source ?? []) {
+        if (alias.externo) continue;
         if (alias.tipo === "superintendente" && alias.profile_id) {
           supers.set(alias.alias_normalizado, alias.profile_id);
         }
@@ -236,6 +242,23 @@ export const resumoInicioLoad = createServerFn({ method: "POST" })
     };
     const salesMaps = aliasMaps(hierarchyAliases ?? []);
     const leadMaps = aliasMaps(leadsAliases ?? []);
+    const salesAliasIndex = buildVendaAliasIndex(
+      ((hierarchyAliases ?? []) as VendaHierarquiaAlias[]).map((row) => ({
+        ...row,
+        externo: Boolean(row.externo),
+      })),
+    );
+    const salesDirectory = {
+      profiles: new Map<string, string>(
+        sups.map((profile) => [profile.id, profile.nome || profile.email || ""]),
+      ),
+      gerentes: new Map(
+        (managers ?? []).map((manager) => [
+          manager.id,
+          { nome: manager.nome, superintendente_id: manager.superintendente_id },
+        ]),
+      ),
+    };
     const resolveSup = (
       rawSup: unknown,
       rawManager: unknown,
@@ -260,7 +283,9 @@ export const resumoInicioLoad = createServerFn({ method: "POST" })
       collect((from, to) =>
         (supabaseAdmin as any)
           .from("vendas_salesforce")
-          .select("superintendente_profile_id, superintendente, gerente, data_assinatura")
+          .select(
+            "diretor, superintendente, gerente, corretor, diretor_fifty, superintendente_fifty, gerente_fifty, corretor_fifty, diretor_profile_id, superintendente_profile_id, gerente_id, data_assinatura",
+          )
           .gte("data_assinatura", period.inicio)
           .lt("data_assinatura", period.fimExclusivo)
           .range(from, to),
@@ -302,11 +327,9 @@ export const resumoInicioLoad = createServerFn({ method: "POST" })
     ]);
 
     for (const sale of sales) {
-      const supId =
-        (sale.superintendente_profile_id && visibleIds.has(sale.superintendente_profile_id)
-          ? sale.superintendente_profile_id
-          : null) || resolveSup(sale.superintendente, sale.gerente, salesMaps);
-      increment(supId, "vendas", 1);
+      for (const credito of buildVendaCreditos(sale, salesAliasIndex, salesDirectory)) {
+        increment(credito.superintendente_id, "vendas", credito.unidades);
+      }
     }
     for (const lead of leads) {
       increment(

@@ -3,11 +3,13 @@
  * Reuse these class strings nas demais abas para manter identidade visual
  * consistente sem duplicar código.
  *
- * Paleta: preto #050505/black-translucent + neon green #39FF14 + gray-400.
+ * Paleta: preto #050505/black-translucent + neon green #39FF14 +
+ * royal blue #4169E1 + gray-400.
  * Estilo: rounded-none, borders neon a 30% de opacidade, uppercase tracking widest.
  */
 
 export const NEON = "#39FF14";
+export const ROYAL_BLUE = "#4169E1";
 
 // Page-level
 export const cyberPageWrap =
@@ -29,6 +31,14 @@ export const cyberCard =
 
 export const cyberCardHover =
   "transition hover:border-[#39FF14] hover:shadow-[0_0_40px_-10px_rgba(57,255,20,0.6)]";
+
+/**
+ * Padrão para painéis com cartões de resumo:
+ * - moldura externa em azul royal suavizado;
+ * - cartões internos em verde neon sólido.
+ */
+export const cyberOuterBorder = "border !border-[#4169E1]/55";
+export const cyberInnerBorder = "border border-[#39FF14]";
 
 // Inputs / Selects
 export const cyberSelectTrigger =

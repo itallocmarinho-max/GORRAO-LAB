@@ -2,6 +2,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { normalizeSalesHierarchy, type VendasHierarquiaTipo } from "@/lib/vendas-hierarquia";
 
 const TokenInput = z.object({ token: z.string().min(1) });
 
@@ -25,9 +26,8 @@ type VendaSheet = {
   superintendente_profile_id: string | null;
   gerente_id: string | null;
   sincronizado_em: string;
+  credito_gorrao?: number;
 };
-
-type HierarquiaTipo = "diretor" | "superintendente" | "gerente";
 
 async function assertAdmin(token: string) {
   const { data, error } = await supabaseAdmin.auth.getUser(token);
@@ -46,6 +46,28 @@ function requiredEnv(name: string): string {
   return value;
 }
 
+function workbookSheetEndpoint(source: URL, sheet: string): URL {
+  const match = source.pathname.match(/\/spreadsheets\/d\/([^/]+)/);
+  if (!match?.[1]) throw new Error("Não foi possível identificar a planilha do Google Sheets");
+  const endpoint = new URL(
+    `https://docs.google.com/spreadsheets/d/${match[1]}/gviz/tq`,
+  );
+  endpoint.searchParams.set("tqx", "out:csv");
+  endpoint.searchParams.set("sheet", sheet);
+  return endpoint;
+}
+
+async function fetchGoogleCsv(endpoint: URL): Promise<string> {
+  const response = await fetch(endpoint, { redirect: "follow" });
+  if (!response.ok) throw new Error(`Falha ao ler Google Sheets (${response.status})`);
+  const contentType = response.headers.get("content-type") ?? "";
+  const csv = await response.text();
+  if (contentType.includes("text/html") || /^\s*<!doctype html/i.test(csv)) {
+    throw new Error("O link não está publicado como CSV ou ainda exige login no Google");
+  }
+  return csv;
+}
+
 function normalizeHeader(value: unknown): string {
   return String(value ?? "")
     .normalize("NFD")
@@ -56,14 +78,7 @@ function normalizeHeader(value: unknown): string {
 }
 
 function normalizeHierarchy(value: unknown): string {
-  return String(value ?? "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/\b(diretor|superintendente|super|gerente)\b/g, " ")
-    .replace(/[^a-z0-9]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+  return normalizeSalesHierarchy(value);
 }
 
 function textOrNull(value: unknown): string | null {
@@ -85,7 +100,7 @@ function dateOrNull(value: unknown): string | null {
   return null;
 }
 
-const aliases: Record<keyof Omit<VendaSheet, "sincronizado_em">, string[]> = {
+const aliases = {
   proposta_identificador: [
     "proposta_identificador",
     "proposta",
@@ -100,6 +115,7 @@ const aliases: Record<keyof Omit<VendaSheet, "sincronizado_em">, string[]> = {
     "dt_assinatura",
     "data_de_assinatura",
     "data_da_assinatura_do_contrato",
+    "data_de_assinatura_do_termo_reserva",
   ],
   empreendimento: ["empreendimento", "produto"],
   unidade: ["unidade", "apto", "apartamento"],
@@ -113,9 +129,11 @@ const aliases: Record<keyof Omit<VendaSheet, "sincronizado_em">, string[]> = {
   superintendente_fifty: ["superintendente_fifty", "superintendente_50", "super_fifty"],
   gerente_fifty: ["gerente_fifty", "gerente_50"],
   corretor_fifty: ["corretor_fifty", "corretor_50", "corretor_fifty_equipe_de_vendas"],
-};
+} satisfies Record<string, string[]>;
 
-function findColumn(headers: string[], field: keyof typeof aliases): number {
+type SheetColumn = keyof typeof aliases;
+
+function findColumn(headers: string[], field: SheetColumn): number {
   return headers.findIndex((header) => aliases[field].includes(header));
 }
 
@@ -172,7 +190,7 @@ function mapRows(values: unknown[][]): { rows: VendaSheet[]; ignored: number } {
       ignored += 1;
       continue;
     }
-    const get = (field: keyof typeof aliases) => {
+    const get = (field: SheetColumn) => {
       const index = findColumn(headers, field);
       return index >= 0 ? source[index] : null;
     };
@@ -202,14 +220,20 @@ function mapRows(values: unknown[][]): { rows: VendaSheet[]; ignored: number } {
 }
 
 async function hierarchyMaps() {
-  const { data, error } = await (supabaseAdmin as any)
-    .from("vendas_hierarquia_aliases")
-    .select("tipo, alias_normalizado, profile_id, gerente_id");
+  const [{ data, error }, { data: managers, error: managersError }] = await Promise.all([
+    (supabaseAdmin as any)
+      .from("vendas_hierarquia_aliases")
+      .select("tipo, alias_normalizado, profile_id, gerente_id, externo"),
+    supabaseAdmin.from("gerentes").select("id, superintendente_id"),
+  ]);
   if (error) throw new Error(error.message);
+  if (managersError) throw new Error(managersError.message);
   const diretor = new Map<string, string>();
   const superintendente = new Map<string, string>();
   const gerente = new Map<string, string>();
+  const gerenteSup = new Map<string, string>();
   for (const row of data ?? []) {
+    if (row.externo) continue;
     if (row.tipo === "diretor" && row.profile_id)
       diretor.set(row.alias_normalizado, row.profile_id);
     if (row.tipo === "superintendente" && row.profile_id) {
@@ -218,25 +242,44 @@ async function hierarchyMaps() {
     if (row.tipo === "gerente" && row.gerente_id)
       gerente.set(row.alias_normalizado, row.gerente_id);
   }
-  return { diretor, superintendente, gerente };
+  for (const manager of managers ?? []) {
+    if (manager.superintendente_id) gerenteSup.set(manager.id, manager.superintendente_id);
+  }
+  return { diretor, superintendente, gerente, gerenteSup };
 }
 
 function resolveHierarchy<T extends Pick<VendaSheet, "diretor" | "superintendente" | "gerente">>(
   row: T,
   maps: Awaited<ReturnType<typeof hierarchyMaps>>,
 ) {
+  const gerenteId = maps.gerente.get(normalizeHierarchy(row.gerente)) ?? null;
   return {
     ...row,
     diretor_profile_id: maps.diretor.get(normalizeHierarchy(row.diretor)) ?? null,
     superintendente_profile_id:
-      maps.superintendente.get(normalizeHierarchy(row.superintendente)) ?? null,
-    gerente_id: maps.gerente.get(normalizeHierarchy(row.gerente)) ?? null,
+      maps.superintendente.get(normalizeHierarchy(row.superintendente)) ??
+      (gerenteId ? maps.gerenteSup.get(gerenteId) : null) ??
+      null,
+    gerente_id: gerenteId,
   };
+}
+
+function gorraoCredit(row: VendaSheet): number {
+  const hasFifty = Boolean(
+    row.corretor_fifty || row.gerente_fifty || row.superintendente_fifty || row.diretor_fifty,
+  );
+  const principal = normalizeHierarchy(row.diretor) === "gorrao" ? (hasFifty ? 0.5 : 1) : 0;
+  const fifty = hasFifty && normalizeHierarchy(row.diretor_fifty) === "gorrao" ? 0.5 : 0;
+  return principal + fifty;
 }
 
 async function reapplyHierarchyLinks() {
   const maps = await hierarchyMaps();
-  for (const table of ["vendas_salesforce", "pastas_salesforce_pv"]) {
+  for (const table of [
+    "vendas_salesforce",
+    "pastas_salesforce_pv",
+    "termos_reserva_salesforce",
+  ]) {
     const { data: sourceRows, error } = await (supabaseAdmin as any)
       .from(table)
       .select("id, diretor, superintendente, gerente");
@@ -260,6 +303,50 @@ async function reapplyHierarchyLinks() {
   }
 }
 
+function resolveTermRows(
+  csv: string,
+  maps: Awaited<ReturnType<typeof hierarchyMaps>>,
+) {
+  return mapRows(parseCsv(csv)).rows.map((source) => {
+    const resolved = resolveHierarchy(source, maps);
+    const { data_assinatura, ...row } = resolved;
+    return { ...row, data_termo: data_assinatura };
+  });
+}
+
+async function persistTermRows(
+  termoRows: ReturnType<typeof resolveTermRows>,
+  batchSize = 500,
+) {
+  for (let start = 0; start < termoRows.length; start += batchSize) {
+    const { error } = await (supabaseAdmin as any)
+      .from("termos_reserva_salesforce")
+      .upsert(termoRows.slice(start, start + batchSize), {
+        onConflict: "proposta_identificador",
+      });
+    if (error) throw new Error(error.message);
+  }
+
+  const currentTerms = new Set(termoRows.map((row) => row.proposta_identificador));
+  const { data: storedTerms, error: storedTermsError } = await (supabaseAdmin as any)
+    .from("termos_reserva_salesforce")
+    .select("id, proposta_identificador");
+  if (storedTermsError) throw new Error(storedTermsError.message);
+  const staleTermIds = (storedTerms ?? [])
+    .filter((row: any) => !currentTerms.has(row.proposta_identificador))
+    .map((row: any) => row.id as string);
+  let removed = 0;
+  for (let start = 0; start < staleTermIds.length; start += batchSize) {
+    const { error: deleteError, count } = await (supabaseAdmin as any)
+      .from("termos_reserva_salesforce")
+      .delete({ count: "exact" })
+      .in("id", staleTermIds.slice(start, start + batchSize));
+    if (deleteError) throw new Error(deleteError.message);
+    removed += count ?? 0;
+  }
+  return removed;
+}
+
 export const vendasSheetsList = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) => TokenInput.parse(input))
   .handler(async ({ data }) => {
@@ -270,7 +357,9 @@ export const vendasSheetsList = createServerFn({ method: "POST" })
       .order("data_assinatura", { ascending: false, nullsFirst: false })
       .order("proposta_identificador", { ascending: true });
     if (error) throw new Error(error.message);
-    return (rows ?? []) as VendaSheet[];
+    return ((rows ?? []) as VendaSheet[])
+      .map((row) => ({ ...row, credito_gorrao: gorraoCredit(row) }))
+      .filter((row) => row.credito_gorrao > 0);
   });
 
 export const vendasSheetsSync = createServerFn({ method: "POST" })
@@ -281,18 +370,15 @@ export const vendasSheetsSync = createServerFn({ method: "POST" })
     if (endpoint.protocol !== "https:" || endpoint.hostname !== "docs.google.com") {
       throw new Error("GOOGLE_SHEETS_VENDAS_CSV_URL precisa ser uma URL HTTPS do Google Sheets");
     }
-    const response = await fetch(endpoint, { redirect: "follow" });
-    if (!response.ok) {
-      throw new Error(`Falha ao ler Google Sheets (${response.status})`);
-    }
-    const contentType = response.headers.get("content-type") ?? "";
-    const csv = await response.text();
-    if (contentType.includes("text/html") || /^\s*<!doctype html/i.test(csv)) {
-      throw new Error("O link não está publicado como CSV ou ainda exige login no Google");
-    }
+    const termoEndpoint = workbookSheetEndpoint(endpoint, "LAB / / TERMO RESERVA");
+    const [csv, termoCsv] = await Promise.all([
+      fetchGoogleCsv(endpoint),
+      fetchGoogleCsv(termoEndpoint),
+    ]);
     const mapped = mapRows(parseCsv(csv));
     const maps = await hierarchyMaps();
     const rows = mapped.rows.map((row) => resolveHierarchy(row, maps));
+    const termoRows = resolveTermRows(termoCsv, maps);
     const { ignored } = mapped;
     if (!rows.length) throw new Error("Nenhuma venda válida foi encontrada na planilha");
     const batchSize = 500;
@@ -302,6 +388,7 @@ export const vendasSheetsSync = createServerFn({ method: "POST" })
         .upsert(rows.slice(start, start + batchSize), { onConflict: "proposta_identificador" });
       if (error) throw new Error(error.message);
     }
+    const removedTerms = await persistTermRows(termoRows, batchSize);
 
     // O Sheets é a fonte única: só removemos registros antigos depois que todos os
     // registros atuais foram validados e gravados com sucesso.
@@ -327,6 +414,28 @@ export const vendasSheetsSync = createServerFn({ method: "POST" })
       synchronized: rows.length,
       removed,
       ignored,
+      termosReserva: termoRows.length,
+      termosReservaRemoved: removedTerms,
+      synchronizedAt: rows[0].sincronizado_em,
+    };
+  });
+
+export const termosReservaSheetsSync = createServerFn({ method: "POST" })
+  .inputValidator((input: unknown) => TokenInput.parse(input))
+  .handler(async ({ data }) => {
+    await assertAdmin(data.token);
+    const source = new URL(requiredEnv("GOOGLE_SHEETS_VENDAS_CSV_URL"));
+    if (source.protocol !== "https:" || source.hostname !== "docs.google.com") {
+      throw new Error("GOOGLE_SHEETS_VENDAS_CSV_URL precisa ser uma URL HTTPS do Google Sheets");
+    }
+    const csv = await fetchGoogleCsv(workbookSheetEndpoint(source, "LAB / / TERMO RESERVA"));
+    const maps = await hierarchyMaps();
+    const rows = resolveTermRows(csv, maps);
+    if (!rows.length) throw new Error("Nenhum termo reserva válido foi encontrado na planilha");
+    const removed = await persistTermRows(rows);
+    return {
+      synchronized: rows.length,
+      removed,
       synchronizedAt: rows[0].sincronizado_em,
     };
   });
@@ -338,17 +447,27 @@ export const vendasHierarchyList = createServerFn({ method: "POST" })
     const [
       { data: vendas },
       { data: pastas },
+      { data: termos },
       { data: aliases },
       { data: profiles },
       { data: gerentes },
     ] = await Promise.all([
-      (supabaseAdmin as any).from("vendas_salesforce").select("diretor, superintendente, gerente"),
+      (supabaseAdmin as any)
+        .from("vendas_salesforce")
+        .select(
+          "diretor, superintendente, gerente, diretor_fifty, superintendente_fifty, gerente_fifty",
+        ),
       (supabaseAdmin as any)
         .from("pastas_salesforce_pv")
         .select("diretor, superintendente, gerente"),
       (supabaseAdmin as any)
+        .from("termos_reserva_salesforce")
+        .select(
+          "diretor, superintendente, gerente, diretor_fifty, superintendente_fifty, gerente_fifty",
+        ),
+      (supabaseAdmin as any)
         .from("vendas_hierarquia_aliases")
-        .select("id, tipo, alias, alias_normalizado, profile_id, gerente_id"),
+        .select("id, tipo, alias, alias_normalizado, profile_id, gerente_id, externo"),
       supabaseAdmin
         .from("profiles")
         .select("id, nome, email, cargo, diretor_id")
@@ -372,12 +491,15 @@ export const vendasHierarchyList = createServerFn({ method: "POST" })
       gerenteSuggestion.set(normalizeHierarchy((gerente as any).nome), (gerente as any).id);
     }
 
-    const build = (tipo: HierarquiaTipo, field: HierarquiaTipo) => {
+    const build = (tipo: VendasHierarquiaTipo, fields: string[]) => {
       const distinct = new Map<string, string>();
-      for (const source of [...(vendas ?? []), ...(pastas ?? [])]) {
-        const raw = String(source[field] ?? "").trim();
-        const normalized = normalizeHierarchy(raw);
-        if (raw && normalized && !distinct.has(normalized)) distinct.set(normalized, raw);
+      const sources = [...(vendas ?? []), ...(pastas ?? []), ...(termos ?? [])];
+      for (const source of sources) {
+        for (const field of fields) {
+          const raw = String((source as any)[field] ?? "").trim();
+          const normalized = normalizeHierarchy(raw);
+          if (raw && normalized && !distinct.has(normalized)) distinct.set(normalized, raw);
+        }
       }
       return [...distinct.entries()]
         .map(([alias_normalizado, alias]) => {
@@ -391,6 +513,8 @@ export const vendasHierarchyList = createServerFn({ method: "POST" })
             alias_normalizado,
             profile_id: current?.profile_id ?? null,
             gerente_id: current?.gerente_id ?? null,
+            externo: current?.externo ?? false,
+            vinculado: Boolean(current),
             suggested_id: current ? null : (suggestion ?? null),
           };
         })
@@ -398,9 +522,9 @@ export const vendasHierarchyList = createServerFn({ method: "POST" })
     };
 
     return {
-      diretores: build("diretor", "diretor"),
-      superintendentes: build("superintendente", "superintendente"),
-      gerentes: build("gerente", "gerente"),
+      diretores: build("diretor", ["diretor", "diretor_fifty"]),
+      superintendentes: build("superintendente", ["superintendente", "superintendente_fifty"]),
+      gerentes: build("gerente", ["gerente", "gerente_fifty"]),
       profiles: (profiles ?? []).map((profile: any) => ({
         id: profile.id,
         nome: profile.nome || profile.email,
@@ -419,7 +543,8 @@ const HierarchyUpsertInput = z.object({
   token: z.string().min(1),
   tipo: z.enum(["diretor", "superintendente", "gerente"]),
   alias: z.string().trim().min(1).max(200),
-  destino_id: z.string().uuid(),
+  destino_id: z.string().uuid().nullable().optional(),
+  externo: z.boolean().default(false),
 });
 
 export const vendasHierarchyUpsert = createServerFn({ method: "POST" })
@@ -428,12 +553,19 @@ export const vendasHierarchyUpsert = createServerFn({ method: "POST" })
     const userId = await assertAdmin(data.token);
     const aliasNormalizado = normalizeHierarchy(data.alias);
     if (!aliasNormalizado) throw new Error("Nome de origem inválido");
+    if (!data.externo && !data.destino_id) {
+      throw new Error("Selecione o cadastro interno ou marque como Equipe externa");
+    }
     const row = {
       tipo: data.tipo,
       alias: data.alias.trim(),
       alias_normalizado: aliasNormalizado,
-      profile_id: data.tipo === "gerente" ? null : data.destino_id,
-      gerente_id: data.tipo === "gerente" ? data.destino_id : null,
+      profile_id:
+        !data.externo && ["diretor", "superintendente"].includes(data.tipo)
+          ? data.destino_id
+          : null,
+      gerente_id: !data.externo && data.tipo === "gerente" ? data.destino_id : null,
+      externo: data.externo,
       created_by: userId,
       updated_at: new Date().toISOString(),
     };

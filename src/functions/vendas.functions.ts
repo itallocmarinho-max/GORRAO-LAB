@@ -2,6 +2,11 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { gerenteDisponivelEm, perfilDisponivelEm } from "@/lib/gerentes";
+import {
+  buildVendaAliasIndex,
+  buildVendaCreditos,
+  type VendaHierarquiaAlias,
+} from "@/lib/vendas-hierarquia";
 
 const TokenInput = z.object({ token: z.string().min(1) });
 
@@ -159,23 +164,38 @@ export const vendasList = createServerFn({ method: "POST" })
     await assertAuth(data.token);
 
     // Vendas realizadas vêm exclusivamente da sincronização do Google Sheets.
-    // Uma venda só entra na Previsão depois que toda a hierarquia foi vinculada
-    // na aba Vendas do Painel de Controle.
+    // Principal e fifty são lidos separadamente para permitir créditos de 0,5.
     const vendasSheets: any[] = [];
     const pageSize = 1000;
     let from = 0;
     while (true) {
-      const { data: page, error } = await supabaseAdmin
+      const { data: page, error } = await (supabaseAdmin as any)
         .from("vendas_salesforce")
-        .select("id, proposta_identificador, data_assinatura, empreendimento, unidade, diretor, superintendente, gerente, corretor, diretor_profile_id, superintendente_profile_id, gerente_id")
-        .not("diretor_profile_id", "is", null)
-        .not("superintendente_profile_id", "is", null)
-        .not("gerente_id", "is", null)
+        .select(
+          "id, proposta_identificador, data_assinatura, empreendimento, unidade, diretor, superintendente, gerente, corretor, diretor_fifty, superintendente_fifty, gerente_fifty, corretor_fifty, diretor_profile_id, superintendente_profile_id, gerente_id",
+        )
         .order("data_assinatura", { ascending: false })
         .range(from, from + pageSize - 1);
       if (error) throw new Error(error.message);
       if (!page || page.length === 0) break;
       vendasSheets.push(...page);
+      if (page.length < pageSize) break;
+      from += pageSize;
+    }
+
+    const termosSheets: any[] = [];
+    from = 0;
+    while (true) {
+      const { data: page, error } = await (supabaseAdmin as any)
+        .from("termos_reserva_salesforce")
+        .select(
+          "id, proposta_identificador, data_termo, empreendimento, unidade, diretor, superintendente, gerente, corretor, diretor_fifty, superintendente_fifty, gerente_fifty, corretor_fifty, diretor_profile_id, superintendente_profile_id, gerente_id",
+        )
+        .order("data_termo", { ascending: false })
+        .range(from, from + pageSize - 1);
+      if (error) throw new Error(error.message);
+      if (!page || page.length === 0) break;
+      termosSheets.push(...page);
       if (page.length < pageSize) break;
       from += pageSize;
     }
@@ -191,11 +211,13 @@ export const vendasList = createServerFn({ method: "POST" })
       .from("previsao_produtos")
       .select("id, nome, ativo");
 
-    // hierarchy aliases (same mechanism as leads)
+    // Vínculos canônicos da hierarquia do Salesforce.
     const [{ data: aliases }, { data: profs }, { data: gers }] = await Promise.all([
-      supabaseAdmin.from("leads_hierarquia_aliases").select("tipo, alias_normalizado, profile_id, gerente_id"),
+      (supabaseAdmin as any)
+        .from("vendas_hierarquia_aliases")
+        .select("tipo, alias, alias_normalizado, profile_id, gerente_id, externo"),
       supabaseAdmin.from("profiles").select("id, nome, email"),
-      supabaseAdmin.from("gerentes").select("id, nome, superintendente_id"),
+      supabaseAdmin.from("gerentes").select("id, nome, superintendente_id, tipo_operacao"),
     ]);
     // produto aliases — resolve produto_id por empreendimento quando a venda não tiver produto setado
     const { data: prodAliases } = await supabaseAdmin
@@ -208,41 +230,108 @@ export const vendasList = createServerFn({ method: "POST" })
     }
     const profName = new Map<string, string>();
     for (const p of profs ?? []) profName.set((p as any).id, (p as any).nome || (p as any).email || "");
-    const gerInfo = new Map<string, { nome: string; sup_id: string }>();
-    for (const g of gers ?? []) gerInfo.set((g as any).id, { nome: (g as any).nome || "", sup_id: (g as any).superintendente_id });
+    const gerInfo = new Map<
+      string,
+      { nome: string; superintendente_id: string | null; canal: "pdv" | "cia" | null }
+    >();
+    for (const g of gers ?? []) {
+      const canal = ["pdv", "cia"].includes(String((g as any).tipo_operacao ?? "").toLowerCase())
+        ? (String((g as any).tipo_operacao).toLowerCase() as "pdv" | "cia")
+        : null;
+      gerInfo.set((g as any).id, {
+        nome: (g as any).nome || "",
+        superintendente_id: (g as any).superintendente_id ?? null,
+        canal,
+      });
+    }
     const supByNorm = new Map<string, string>(); // norm -> sup name
-    const gerByNorm = new Map<string, { nome: string; sup_nome: string | null }>();
+    const gerByNorm = new Map<
+      string,
+      { nome: string; sup_nome: string | null; canal: "pdv" | "cia" | null }
+    >();
+    for (const gerente of gerInfo.values()) {
+      gerByNorm.set(normHier(gerente.nome), {
+        nome: gerente.nome,
+        sup_nome: gerente.superintendente_id
+          ? (profName.get(gerente.superintendente_id) ?? null)
+          : null,
+        canal: gerente.canal,
+      });
+    }
     for (const a of aliases ?? []) {
       const row = a as any;
+      if (row.externo) continue;
       if (row.tipo === "superintendente" && row.profile_id) {
         const n = profName.get(row.profile_id);
         if (n) supByNorm.set(row.alias_normalizado, n);
       } else if (row.tipo === "gerente" && row.gerente_id) {
         const g = gerInfo.get(row.gerente_id);
-        if (g) gerByNorm.set(row.alias_normalizado, { nome: g.nome, sup_nome: g.sup_id ? (profName.get(g.sup_id) ?? null) : null });
+        if (g) {
+          gerByNorm.set(row.alias_normalizado, {
+            nome: g.nome,
+            sup_nome: g.superintendente_id
+              ? (profName.get(g.superintendente_id) ?? null)
+              : null,
+            canal: g.canal,
+          });
+        }
       }
     }
 
-    const vendas = vendasSheets.map((v) => {
-      const gerenteVinculado = v.gerente_id ? gerInfo.get(v.gerente_id) : null;
-      const superintendente = v.superintendente_profile_id
-        ? profName.get(v.superintendente_profile_id)
-        : null;
-      const diretor = v.diretor_profile_id ? profName.get(v.diretor_profile_id) : null;
-      return {
-        id: v.id,
-        pv: v.proposta_identificador,
-        empreendimento: v.empreendimento,
-        data_assinatura: v.data_assinatura,
-        superintendente: superintendente || v.superintendente || null,
-        gerente: gerenteVinculado?.nome || v.gerente || null,
-        corretor: v.corretor,
-        diretor: diretor || v.diretor || null,
-        vgv: 0,
-        unidades: 1,
-        produto_id: null as string | null,
-      };
-    });
+    const salesAliasIndex = buildVendaAliasIndex(
+      ((aliases ?? []) as VendaHierarquiaAlias[]).map((row) => ({
+        ...row,
+        externo: Boolean(row.externo),
+      })),
+    );
+    const salesDirectory = {
+      profiles: profName,
+      gerentes: gerInfo,
+    };
+    const vendas = vendasSheets.flatMap((v) =>
+      buildVendaCreditos(v, salesAliasIndex, salesDirectory)
+        .filter(
+          (credito) =>
+            credito.diretor_id || credito.superintendente_id || credito.gerente_id,
+        )
+        .map((credito) => ({
+          id: `${v.id}:${credito.lado}`,
+          venda_id: v.id,
+          lado: credito.lado,
+          pv: v.proposta_identificador,
+          empreendimento: v.empreendimento,
+          data_assinatura: v.data_assinatura,
+          superintendente: credito.superintendente,
+          gerente: credito.gerente,
+          corretor: credito.corretor,
+          diretor: credito.diretor,
+          canal: credito.gerente_id ? (gerInfo.get(credito.gerente_id)?.canal ?? null) : null,
+          vgv: 0,
+          unidades: credito.unidades,
+          produto_id: null as string | null,
+        })),
+    );
+    const termosReserva = termosSheets.flatMap((termo) =>
+      buildVendaCreditos(termo, salesAliasIndex, salesDirectory)
+        .filter(
+          (credito) =>
+            credito.diretor_id || credito.superintendente_id || credito.gerente_id,
+        )
+        .map((credito) => ({
+          id: `${termo.id}:${credito.lado}`,
+          termo_id: termo.id,
+          lado: credito.lado,
+          pv: termo.proposta_identificador,
+          empreendimento: termo.empreendimento,
+          data_termo: termo.data_termo,
+          superintendente: credito.superintendente,
+          gerente: credito.gerente,
+          corretor: credito.corretor,
+          diretor: credito.diretor,
+          canal: credito.gerente_id ? (gerInfo.get(credito.gerente_id)?.canal ?? null) : null,
+          unidades: credito.unidades,
+        })),
+    );
 
     const vendasResolved = vendas.map((v) => {
       const out = { ...v };
@@ -272,12 +361,21 @@ export const vendasList = createServerFn({ method: "POST" })
       }
       if (p.gerente) {
         const r = gerByNorm.get(normHier(String(p.gerente)));
-        if (r) out.gerente = r.nome;
+        if (r) {
+          out.gerente = r.nome;
+          out.canal = r.canal;
+        }
       }
+      if (!("canal" in out)) out.canal = null;
       return out;
     });
 
-    return { vendas: vendasResolved, previsoes: previsoesResolved, produtos: produtos ?? [] };
+    return {
+      vendas: vendasResolved,
+      termosReserva,
+      previsoes: previsoesResolved,
+      produtos: produtos ?? [],
+    };
   });
 
 export const vendasClearAll = createServerFn({ method: "POST" })

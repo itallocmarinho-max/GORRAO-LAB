@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { CyberProgressRing } from "@/components/CyberProgressRing";
 import type { PastaVolumeRow } from "@/functions/google-sheets-pastas.functions";
 
 type SupSummary = {
@@ -154,32 +155,12 @@ export function PastasOverview({
 }
 
 function PastasRing({ total, rate, loading }: { total: number; rate: number; loading: boolean }) {
-  const value = Math.min(Math.max(rate, 0), 100);
   return (
-    <div className="relative mx-auto h-40 w-40">
-      <svg viewBox="0 0 120 120" className="h-full w-full -rotate-90">
-        <circle cx="60" cy="60" r="50" fill="none" stroke="rgba(255,255,255,.08)" strokeWidth="5" />
-        <circle
-          cx="60"
-          cy="60"
-          r="50"
-          fill="none"
-          stroke="#39FF14"
-          strokeWidth="5"
-          strokeLinecap="square"
-          strokeDasharray={`${value * 3.1416} 314.16`}
-          className="drop-shadow-[0_0_5px_rgba(57,255,20,.7)] transition-all"
-        />
-      </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className="font-mono text-3xl font-light text-[#39FF14]">
-          {loading ? "—" : total.toLocaleString("pt-BR")}
-        </span>
-        <span className="mt-1 text-[7px] uppercase tracking-[0.15em] text-white/30">
-          Total de PV
-        </span>
-      </div>
-    </div>
+    <CyberProgressRing
+      percentual={rate}
+      valor={loading ? "—" : total.toLocaleString("pt-BR")}
+      rotulo="Total de PV"
+    />
   );
 }
 
