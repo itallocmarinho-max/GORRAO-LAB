@@ -18,6 +18,9 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { TIPOS_FORMULARIO, TIPOS_GASTO, type TipoFormulario, tipoLabel, destinacaoFromTipoGasto } from "@/lib/form-types";
 import { useHierarquia } from "@/hooks/useHierarquia";
 import { CyberBackdrop } from "@/components/CyberBackdrop";
+import { VerbaCuryHistorico } from "@/components/VerbaCuryHistorico";
+import { PlanejamentoHistorico } from "@/components/PlanejamentoHistorico";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 
 
 
@@ -88,8 +91,12 @@ function Dashboard() {
   const [contratacaoMap, setContratacaoMap] = useState<Record<string, { candidatos: number; contratados: number; total: number }>>({});
   const [open, setOpen] = useState(false);
   const tipoAtivo = (search.tipo as TipoFormulario | undefined) || "verba_cury";
-  const [filtroMes, setFiltroMes] = useState<string>("todos");
-  const [filtroAno, setFiltroAno] = useState<string>("todos");
+  const [filtroMes, setFiltroMes] = useState<string>(() =>
+    tipoAtivo === "planejamento" ? String(new Date().getMonth() + 1) : "todos",
+  );
+  const [filtroAno, setFiltroAno] = useState<string>(() =>
+    tipoAtivo === "planejamento" ? String(new Date().getFullYear()) : "todos",
+  );
   const [filtroSup, setFiltroSup] = useState<string>("todos");
   const [filtroGerente, setFiltroGerente] = useState<string>("todos");
   const [filtroDiretor, setFiltroDiretor] = useState<string>("todos");
@@ -97,7 +104,7 @@ function Dashboard() {
   const [filtroDestinacaoGasto, setFiltroDestinacaoGasto] = useState<"todos" | "gerar_venda" | "manutencao">("todos");
   const [filtrosAbertos, setFiltrosAbertos] = useState(false);
   const filtrosRef = useRef<HTMLDivElement>(null);
-  const { diretores, supsByDiretorNome, gerentesBySupNome, gerentesByDiretorSup, superintendentes } = useHierarquia();
+  const { diretores, supsByDiretorNome, gerentesBySupNome, gerentesByDiretorSup, superintendentes, gerentes } = useHierarquia();
   const tipo = tipoAtivo;
   const cyberAtivo = tipoAtivo === "verba_cury" || tipoAtivo === "planejamento" || tipoAtivo === "gastos_pessoais" || tipoAtivo === "contratacao";
   const cyberTipo = tipo === "verba_cury" || tipo === "planejamento" || tipo === "gastos_pessoais" || tipo === "contratacao";
@@ -135,10 +142,27 @@ function Dashboard() {
     setForms(list);
     const ids = list.map((f) => f.id);
     if (ids.length) {
-      const { data: ls } = await supabase
-        .from("lancamentos")
-        .select("formulario_id,valor,reprovado,gerente,superintendente,meta_sup,verba_cury,verba_gerente,verba_superintendente,meta_gerente,secao,nome_recebedor,plantao,destinacao,tipo_gasto,candidatos,contratados")
-        .in("formulario_id", ids);
+      // O PostgREST limita cada resposta a 1.000 linhas. Planejamentos
+      // históricos podem ultrapassar esse volume, então carregamos todos os
+      // lançamentos em páginas e dividimos a lista de formulários para não
+      // estourar o tamanho máximo da URL do filtro `in`.
+      const ls: any[] = [];
+      const tamanhoPagina = 1000;
+      const tamanhoLoteFormularios = 100;
+      for (let inicioLote = 0; inicioLote < ids.length; inicioLote += tamanhoLoteFormularios) {
+        const idsDoLote = ids.slice(inicioLote, inicioLote + tamanhoLoteFormularios);
+        for (let inicioPagina = 0; ; inicioPagina += tamanhoPagina) {
+          const { data: pagina, error: lancamentosError } = await supabase
+            .from("lancamentos")
+            .select("id,formulario_id,valor,reprovado,gerente,superintendente,meta_sup,verba_cury,verba_gerente,verba_superintendente,meta_gerente,secao,nome_recebedor,plantao,destinacao,tipo_gasto,candidatos,contratados")
+            .in("formulario_id", idsDoLote)
+            .order("id", { ascending: true })
+            .range(inicioPagina, inicioPagina + tamanhoPagina - 1);
+          if (lancamentosError) return toast.error(lancamentosError.message);
+          ls.push(...(pagina || []));
+          if (!pagina || pagina.length < tamanhoPagina) break;
+        }
+      }
       const used: Record<string, number> = {};
       const gMap: Record<string, Set<string>> = {};
       const planAgg: Record<string, { sup: string | null; metaSup: number; verbaTotal: number; investimentoEquipe: number; aceleraPlanejado: number; corretores: Set<string>; gerentes: Set<string>; sups: Set<string>; pacotes: Record<string, number>; metasGerentes: Record<string, number>; verbasGerentes: Record<string, number>; aceleraValores: { corretores: number; gerentes: number; sups: number; total: number }; plantoes: Array<{ plantao: string; sup: string; planejado: number }> }> = {};
@@ -148,7 +172,7 @@ function Dashboard() {
       const gastosPorTipoAgg: Record<string, Record<string, { gv: number; mn: number; total: number }>> = {};
       const contratacaoIds = new Set(list.filter((f) => f.tipo === "contratacao").map((f) => f.id));
       const contratacaoAgg: Record<string, { candidatos: number; contratados: number; total: number }> = {};
-      (ls || []).forEach((l: any) => {
+      ls.forEach((l: any) => {
         if (!l.reprovado) used[l.formulario_id] = (used[l.formulario_id] || 0) + Number(l.valor);
         if (l.gerente) {
           (gMap[l.formulario_id] ||= new Set<string>()).add(l.gerente);
@@ -272,7 +296,10 @@ function Dashboard() {
 
   // Reset filters when switching form type from sidebar
   useEffect(() => {
-    setFiltroMes("todos"); setFiltroAno("todos"); setFiltroDiretor("todos"); setFiltroSup("todos"); setFiltroGerente("todos"); setFiltroTipoGasto("todos"); setFiltroDestinacaoGasto("todos");
+    const dataAtual = new Date();
+    setFiltroMes(tipoAtivo === "planejamento" ? String(dataAtual.getMonth() + 1) : "todos");
+    setFiltroAno(tipoAtivo === "planejamento" ? String(dataAtual.getFullYear()) : "todos");
+    setFiltroDiretor("todos"); setFiltroSup("todos"); setFiltroGerente("todos"); setFiltroTipoGasto("todos"); setFiltroDestinacaoGasto("todos");
     setFiltrosAbertos(false);
   }, [tipoAtivo]);
 
@@ -596,6 +623,24 @@ function Dashboard() {
           )}
         </div>
         <div className={cyberAtivo ? "flex w-full items-center justify-end gap-2" : "flex items-center gap-2"}>
+        {tipoAtivo === "verba_cury" && isAdmin && session?.access_token && (
+          <VerbaCuryHistorico
+            token={session.access_token}
+            diretores={diretores}
+            superintendentes={superintendentes}
+            gerentes={gerentes}
+            onImported={load}
+          />
+        )}
+        {tipoAtivo === "planejamento" && isAdmin && session?.access_token && (
+          <PlanejamentoHistorico
+            token={session.access_token}
+            diretores={diretores}
+            superintendentes={superintendentes}
+            gerentes={gerentes}
+            onImported={load}
+          />
+        )}
         {cyberAtivo && (
           <div ref={filtrosRef} className="relative">
             <button
@@ -844,20 +889,49 @@ function Dashboard() {
               </div>
             </div>
 
-            <div className="flex min-h-full flex-col border border-white/10 bg-white/[0.025] p-4">
-              <h3 className="mb-3 text-[10px] font-bold uppercase tracking-[0.24em] text-[#39FF14]">Plantão</h3>
-              <div className="flex-1 space-y-3">
+            <div className="relative min-h-[820px]">
+              <div className="absolute inset-0 flex min-h-0 flex-col overflow-hidden border border-white/10 bg-white/[0.025] p-4">
+              <h3 className="mb-3 shrink-0 text-[10px] font-bold uppercase tracking-[0.24em] text-[#39FF14]">Plantão</h3>
+              <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain pr-1">
                 {resumoPlanejamentoValidado.plantoes.size === 0 ? (
                   <div className="border border-dashed border-white/10 p-6 text-center text-[10px] uppercase tracking-widest text-white/35">Nenhum plantão validado</div>
-                ) : Array.from(resumoPlanejamentoValidado.plantoes.entries()).sort(([a], [b]) => a.localeCompare(b, "pt-BR")).map(([plantao, sups]) => {
-                  const totalPlantao = Array.from(sups.values()).reduce((total, valor) => total + valor, 0);
-                  return <div key={plantao} className="border border-white/10 bg-black/30">
-                    <div className="flex items-center justify-between border-b border-white/10 px-3 py-2"><strong className="text-[10px] uppercase tracking-[0.18em] text-white">{plantao}</strong><span className="font-mono text-xs font-bold text-[#39FF14]">{totalPlantao.toLocaleString("pt-BR")}</span></div>
-                    <div className="divide-y divide-white/[0.06]">{Array.from(sups.entries()).sort(([a], [b]) => a.localeCompare(b, "pt-BR")).map(([sup, planejado]) => <div key={sup} className="flex items-center justify-between px-3 py-2 text-[10px]"><span className="uppercase tracking-[0.12em] text-white/55">{sup}</span><span className="font-mono text-white"><span className="mr-2 text-[8px] uppercase text-white/30">Planejado</span>{planejado.toLocaleString("pt-BR")}</span></div>)}</div>
-                  </div>;
-                })}
+                ) : (
+                  <Accordion type="multiple" className="space-y-2">
+                    {Array.from(resumoPlanejamentoValidado.plantoes.entries()).sort(([a], [b]) => a.localeCompare(b, "pt-BR")).map(([plantao, sups]) => {
+                      const totalPlantao = Array.from(sups.values()).reduce((total, valor) => total + valor, 0);
+                      const supsOrdenados = Array.from(sups.entries()).sort(([a], [b]) => a.localeCompare(b, "pt-BR"));
+                      return (
+                        <AccordionItem key={plantao} value={plantao} className="border border-white/10 bg-black/30">
+                          <AccordionTrigger className="gap-3 px-3 py-3 hover:no-underline [&>svg]:text-[#39FF14]">
+                            <div className="min-w-0 flex-1 text-left">
+                              <strong className="block truncate text-[10px] uppercase tracking-[0.18em] text-white">{plantao}</strong>
+                            </div>
+                            <span className="font-mono text-xs font-bold text-[#39FF14]">{totalPlantao.toLocaleString("pt-BR")}</span>
+                          </AccordionTrigger>
+                          <AccordionContent className="border-t border-white/10 pb-0">
+                            <div className="border-b border-white/[0.06] px-3 py-2 text-[8px] uppercase tracking-[0.14em] text-white/30">
+                              {supsOrdenados.length} {supsOrdenados.length === 1 ? "superintendente" : "superintendentes"}
+                            </div>
+                            <div className="divide-y divide-white/[0.06]">
+                              {supsOrdenados.map(([sup, planejado]) => (
+                                <div key={sup} className="flex items-center justify-between gap-3 px-3 py-2.5 text-[10px]">
+                                  <span className="min-w-0 truncate uppercase tracking-[0.12em] text-white/55">{sup}</span>
+                                  <span className="shrink-0 font-mono text-white">
+                                    <span className="mr-2 text-[8px] uppercase text-white/30">Planejado</span>
+                                    {planejado.toLocaleString("pt-BR")}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </AccordionContent>
+                        </AccordionItem>
+                      );
+                    })}
+                  </Accordion>
+                )}
               </div>
-              <div className="mt-3 flex items-center justify-between border-t border-[#39FF14]/25 pt-3 text-[10px] font-bold uppercase tracking-[0.18em] text-[#39FF14]"><span>Total</span><span className="font-mono text-base">{resumoPlanejamentoValidado.metaPlanejada.toLocaleString("pt-BR")}</span></div>
+              <div className="mt-3 flex shrink-0 items-center justify-between border-t border-[#39FF14]/25 pt-3 text-[10px] font-bold uppercase tracking-[0.18em] text-[#39FF14]"><span>Total</span><span className="font-mono text-base">{resumoPlanejamentoValidado.metaPlanejada.toLocaleString("pt-BR")}</span></div>
+              </div>
             </div>
           </div>
           <div className="mt-4 border-t border-[#39FF14]/20 pt-4">
@@ -867,7 +941,7 @@ function Dashboard() {
                 <button key={sup.nome} type="button" disabled={sup.formularios.length === 0} onClick={() => setResponsavelSelecionado({ nome: sup.nome, formularios: sup.formularios })} className={`${usuarioSuperintendente ? "w-[190px] shrink-0" : "w-full min-w-0"} border border-white/10 bg-white/[0.025] p-3 text-left transition hover:border-[#39FF14]/70 hover:bg-[#39FF14]/[0.035] disabled:cursor-default disabled:opacity-55 disabled:hover:border-white/10 disabled:hover:bg-white/[0.025]`}>
                   <div className="truncate border-b border-white/10 pb-2 text-xs font-bold uppercase tracking-[0.18em] text-[#39FF14]" title={sup.nome}>{sup.nome}</div>
                   <div className="mt-3 space-y-2 text-[10px] uppercase tracking-[0.12em]">
-                    <div className="flex items-center justify-between gap-2"><span className="text-white/45">Planejado</span><strong className="font-mono text-white">{sup.quantidadeValidada}</strong></div>
+                    <div className="flex items-center justify-between gap-2"><span className="text-white/45">Planejado</span><strong className="font-mono text-white">{sup.planejado.toLocaleString("pt-BR")}</strong></div>
                     <div className="flex items-center justify-between gap-2"><span className="text-white/45">Realizado</span><strong className="font-mono text-white/55">{sup.realizado.toLocaleString("pt-BR")}</strong></div>
                     <div className="flex items-center justify-between gap-2"><span className="text-white/45">% realizado</span><strong className="font-mono text-[#39FF14]">{sup.percentual.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%</strong></div>
                     <div className="flex items-center justify-between gap-2 border-t border-white/10 pt-2"><span className="text-white/45">Verba planejada</span><strong className="font-mono text-white">{brl(sup.verbaPlanejada)}</strong></div>

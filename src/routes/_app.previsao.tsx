@@ -54,43 +54,6 @@ const realizadoColor = (realizado: number, previsao: number): string | undefined
 };
 const saldoColor = (saldo: number): string => saldo < 0 ? "#f43f5e" : "#10b981";
 
-function CanalValores({
-  pdv,
-  cia,
-  total,
-  color,
-  mostrarTotal = false,
-}: {
-  pdv: number;
-  cia: number;
-  total: number;
-  color?: (valor: number) => string;
-  mostrarTotal?: boolean;
-}) {
-  const valores = mostrarTotal
-    ? ([
-        ["PDV", pdv],
-        ["CIA", cia],
-        ["Total", total],
-      ] as const)
-    : ([
-        ["PDV", pdv],
-        ["CIA", cia],
-      ] as const);
-  return (
-    <div className={`mt-3 grid ${mostrarTotal ? "grid-cols-3" : "grid-cols-2"} border-t border-white/10 pt-3 text-center`}>
-      {valores.map(([label, value]) => (
-        <div key={label} className="border-r border-white/10 px-1 last:border-r-0">
-          <div className="text-[8px] font-bold uppercase tracking-[0.14em] text-white/35">{label}</div>
-          <div className="mt-1 font-mono text-sm" style={{ color: color?.(value) }}>
-            {fmtNumDec(value)}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 // Tintas sutis por coluna (paleta do projeto)
 const COL = {
   previsao: "w-36 bg-[oklch(0.43_0.18_264.18/0.05)]",   // accent (azul)
@@ -162,7 +125,6 @@ type Venda = {
   vgv: number;
   unidades: number;
   produto_id: string | null;
-  canal: "pdv" | "cia" | null;
 };
 type TermoReserva = {
   id: string;
@@ -174,7 +136,6 @@ type TermoReserva = {
   corretor: string | null;
   diretor: string | null;
   unidades: number;
-  canal: "pdv" | "cia" | null;
 };
 type Previsao = {
   id: string;
@@ -186,7 +147,6 @@ type Previsao = {
   preciso_vendas: number;
   realizado: number;
   observacao: string | null;
-  canal: "pdv" | "cia" | null;
 };
 type ProdutoLite = { id: string; nome: string; ativo: boolean };
 type Batch = { id: string; created_at: string; total: number; vgv: number; unidades: number; created_by: string | null };
@@ -269,7 +229,6 @@ function PrevisaoPage() {
   const [supFilter, setSupFilter] = useState<string>(ALL);
   const [gerFilter, setGerFilter] = useState<string>(ALL);
   const [corFilter, setCorFilter] = useState<string>(ALL);
-  const [canalFilter, setCanalFilter] = useState<typeof ALL | "pdv" | "cia">(ALL);
   const [dataIni, setDataIni] = useState<string>("");
   const [dataFim, setDataFim] = useState<string>("");
   const [baseFilter, setBaseFilter] = useState<"todos" | "termos_reserva">("todos");
@@ -348,33 +307,30 @@ function PrevisaoPage() {
     for (const row of [...vendas, ...termosReserva]) {
       if (!row.gerente) continue;
       if (supFilter !== ALL && row.superintendente !== supFilter) continue;
-      if (canalFilter !== ALL && row.canal !== canalFilter) continue;
       set.add(row.gerente);
     }
     return Array.from(set).sort((a, b) => a.localeCompare(b, "pt-BR"));
-  }, [vendas, termosReserva, supFilter, canalFilter]);
+  }, [vendas, termosReserva, supFilter]);
   const corretores = useMemo(() => {
     const set = new Set<string>();
     for (const row of [...vendas, ...termosReserva]) {
       if (!row.corretor) continue;
       if (supFilter !== ALL && row.superintendente !== supFilter) continue;
       if (gerFilter !== ALL && row.gerente !== gerFilter) continue;
-      if (canalFilter !== ALL && row.canal !== canalFilter) continue;
       set.add(row.corretor);
     }
     return Array.from(set).sort((a, b) => a.localeCompare(b, "pt-BR"));
-  }, [vendas, termosReserva, supFilter, gerFilter, canalFilter]);
+  }, [vendas, termosReserva, supFilter, gerFilter]);
 
   // ===== Filtros aplicados =====
   const vendasF = useMemo(() => vendas.filter((v) => {
     if (supFilter !== ALL && v.superintendente !== supFilter) return false;
     if (gerFilter !== ALL && v.gerente !== gerFilter) return false;
     if (corFilter !== ALL && v.corretor !== corFilter) return false;
-    if (canalFilter !== ALL && v.canal !== canalFilter) return false;
     if (dataIni && (!v.data_assinatura || v.data_assinatura < dataIni)) return false;
     if (dataFim && (!v.data_assinatura || v.data_assinatura > dataFim)) return false;
     return true;
-  }), [vendas, supFilter, gerFilter, corFilter, canalFilter, dataIni, dataFim]);
+  }), [vendas, supFilter, gerFilter, corFilter, dataIni, dataFim]);
 
   const previsoesF = useMemo(() => previsoes.filter((p) => {
     if (supFilter !== ALL && p.superintendente !== supFilter) return false;
@@ -389,12 +345,11 @@ function PrevisaoPage() {
         if (supFilter !== ALL && termo.superintendente !== supFilter) return false;
         if (gerFilter !== ALL && termo.gerente !== gerFilter) return false;
         if (corFilter !== ALL && termo.corretor !== corFilter) return false;
-        if (canalFilter !== ALL && termo.canal !== canalFilter) return false;
         if (dataIni && (!termo.data_termo || termo.data_termo < dataIni)) return false;
         if (dataFim && (!termo.data_termo || termo.data_termo > dataFim)) return false;
         return true;
       }),
-    [termosReserva, supFilter, gerFilter, corFilter, canalFilter, dataIni, dataFim],
+    [termosReserva, supFilter, gerFilter, corFilter, dataIni, dataFim],
   );
 
   const totalPrevisao = useMemo(() => previsoesF.reduce((a, p) => a + Number(p.preciso_vendas || 0), 0), [previsoesF]);
@@ -404,31 +359,7 @@ function PrevisaoPage() {
     [termosReservaF],
   );
   const saldo = totalRealizado - totalPrevisao;
-  const resumoCanais = useMemo(() => {
-    const total = (rows: Array<{ canal: "pdv" | "cia" | null }>, value: (row: any) => number, canal?: "pdv" | "cia") =>
-      rows.reduce(
-        (sum, row) => sum + (!canal || row.canal === canal ? Number(value(row) || 0) : 0),
-        0,
-      );
-    const build = (canal?: "pdv" | "cia") => {
-      const previsao = total(previsoesF, (row) => row.preciso_vendas, canal);
-      const realizado = total(vendasF, (row) => row.unidades, canal);
-      return {
-        previsao,
-        realizado,
-        saldo: realizado - previsao,
-        termoReserva: total(termosReservaF, (row) => row.unidades, canal),
-      };
-    };
-    return { pdv: build("pdv"), cia: build("cia"), total: build() };
-  }, [previsoesF, vendasF, termosReservaF]);
   const percentualRealizado = totalPrevisao > 0 ? (totalRealizado / totalPrevisao) * 100 : 0;
-  const termosSemCanal = Math.max(
-    0,
-    resumoCanais.total.termoReserva -
-      resumoCanais.pdv.termoReserva -
-      resumoCanais.cia.termoReserva,
-  );
   const preenchimentoPizza = Math.max(0, Math.min(percentualRealizado, 100));
   const corRealizado = realizadoColor(totalRealizado, totalPrevisao) ?? "#39FF14";
 
@@ -580,10 +511,9 @@ function PrevisaoPage() {
             </div>
             <div className="space-y-1"><Label className="text-[9px] uppercase tracking-[0.16em] text-white/45">Gerente</Label><Select value={gerFilter} onValueChange={(v) => { setGerFilter(v); setCorFilter(ALL); }}><SelectTrigger className="rounded-none border-[#4169E1]/30 bg-black text-white"><SelectValue /></SelectTrigger><SelectContent className="rounded-none border-[#4169E1]/30 bg-black text-white"><SelectItem value={ALL}>Todos</SelectItem>{gers.map((g) => <SelectItem key={g} value={g}>{g}</SelectItem>)}</SelectContent></Select></div>
             <div className="space-y-1"><Label className="text-[9px] uppercase tracking-[0.16em] text-white/45">Corretor</Label><Select value={corFilter} onValueChange={setCorFilter}><SelectTrigger className="rounded-none border-[#4169E1]/30 bg-black text-white"><SelectValue /></SelectTrigger><SelectContent className="rounded-none border-[#4169E1]/30 bg-black text-white"><SelectItem value={ALL}>Todos</SelectItem>{corretores.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent></Select></div>
-            <div className="space-y-1"><Label className="text-[9px] uppercase tracking-[0.16em] text-white/45">Canal</Label><Select value={canalFilter} onValueChange={(value) => { setCanalFilter(value as typeof ALL | "pdv" | "cia"); setGerFilter(ALL); setCorFilter(ALL); }}><SelectTrigger className="rounded-none border-[#4169E1]/30 bg-black text-white"><SelectValue /></SelectTrigger><SelectContent className="rounded-none border-[#4169E1]/30 bg-black text-white"><SelectItem value={ALL}>Todos os canais</SelectItem><SelectItem value="pdv">PDV</SelectItem><SelectItem value="cia">CIA</SelectItem></SelectContent></Select></div>
             <div className="space-y-1"><Label className="text-[9px] uppercase tracking-[0.16em] text-white/45">Exibição</Label><Select value={baseFilter} onValueChange={(value) => setBaseFilter(value as "todos" | "termos_reserva")}><SelectTrigger className="rounded-none border-[#4169E1]/30 bg-black text-white"><SelectValue /></SelectTrigger><SelectContent className="rounded-none border-[#4169E1]/30 bg-black text-white"><SelectItem value="todos">Todos os dados</SelectItem><SelectItem value="termos_reserva">Somente termos reserva</SelectItem></SelectContent></Select></div>
             <div className="grid grid-cols-2 gap-2"><div className="space-y-1"><Label className="text-[9px] uppercase tracking-[0.12em] text-white/45">{baseFilter === "termos_reserva" ? "Assinatura termo · início" : "Data inicial"}</Label><Input type="date" value={dataIni} onChange={(e) => setDataIni(e.target.value)} className="rounded-none border-[#4169E1]/30 bg-black text-white [color-scheme:dark]" /></div><div className="space-y-1"><Label className="text-[9px] uppercase tracking-[0.12em] text-white/45">{baseFilter === "termos_reserva" ? "Assinatura termo · fim" : "Data final"}</Label><Input type="date" value={dataFim} onChange={(e) => setDataFim(e.target.value)} className="rounded-none border-[#4169E1]/30 bg-black text-white [color-scheme:dark]" /></div></div>
-            <Button className={`${cyberBtnGhost} w-full`} onClick={() => { setSupFilter(ALL); setGerFilter(ALL); setCorFilter(ALL); setCanalFilter(ALL); setBaseFilter("todos"); setDataIni(""); setDataFim(""); }}>Limpar filtros</Button>
+            <Button className={`${cyberBtnGhost} w-full`} onClick={() => { setSupFilter(ALL); setGerFilter(ALL); setCorFilter(ALL); setBaseFilter("todos"); setDataIni(""); setDataFim(""); }}>Limpar filtros</Button>
           </div>
         </div>
       </div>
@@ -673,7 +603,6 @@ function PrevisaoPage() {
                   <div className="mt-2 font-mono text-2xl" style={{ color: corRealizado }}>
                     {fmtNumDec(totalRealizado)}
                   </div>
-                  <CanalValores pdv={resumoCanais.pdv.realizado} cia={resumoCanais.cia.realizado} total={resumoCanais.total.realizado} color={() => corRealizado} />
                 </div>
                 <div className="border border-[#39FF14] bg-white/[0.025] p-4">
                   <div className="text-[9px] font-bold uppercase tracking-[0.18em] text-white/40">
@@ -693,8 +622,6 @@ function PrevisaoPage() {
                   <div className="mt-2 font-mono text-2xl text-[#39FF14]">
                     {fmtNumDec(totalTermosReserva)}
                   </div>
-                  <CanalValores pdv={resumoCanais.pdv.termoReserva} cia={resumoCanais.cia.termoReserva} total={resumoCanais.total.termoReserva} />
-                  {termosSemCanal > 0 && <div className="mt-2 text-center text-[8px] uppercase tracking-[0.12em] text-amber-300/65">{fmtNumDec(termosSemCanal)} sem canal cadastrado</div>}
                 </div>
                 <div className="flex items-center gap-5 border-t border-white/10 pt-3 text-[8px] uppercase tracking-[0.14em] text-white/35 sm:col-span-2 xl:col-span-4">
                   <span className="flex items-center gap-2">
@@ -714,8 +641,6 @@ function PrevisaoPage() {
             <CardContent className="py-7">
               <div className="text-[9px] font-bold uppercase tracking-[0.2em] text-white/40">Volume no período</div>
               <div className="mt-2 font-mono text-5xl text-[#39FF14]">{fmtNumDec(totalTermosReserva)}</div>
-              <div className="max-w-md"><CanalValores pdv={resumoCanais.pdv.termoReserva} cia={resumoCanais.cia.termoReserva} total={resumoCanais.total.termoReserva} /></div>
-              {termosSemCanal > 0 && <div className="mt-2 text-[9px] uppercase tracking-[0.14em] text-amber-300/65">{fmtNumDec(termosSemCanal)} sem canal cadastrado</div>}
               <div className="mt-3 text-[9px] uppercase tracking-[0.15em] text-white/35">Indicador avulso · não altera previsão, realizado ou saldo</div>
             </CardContent>
           </Card>}

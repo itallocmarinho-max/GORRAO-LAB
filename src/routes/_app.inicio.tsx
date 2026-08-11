@@ -1,8 +1,15 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
-import { PastasOverview } from "@/components/PastasOverview";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ResumoInicioButton } from "@/components/ResumoInicioButton";
 import { CyberProgressRing } from "@/components/CyberProgressRing";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { pastasSheetsList, type PastaVolumeRow } from "@/functions/google-sheets-pastas.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -24,7 +31,11 @@ type Formulario = {
   valor_marketing?: number | null;
 };
 type Financeiro = { valor: number; tipo_gasto: string; mes: number; ano: number };
-type Previsao = { preciso_vendas: number; semana_inicio: string | null };
+type Previsao = {
+  preciso_vendas: number;
+  semana_inicio: string | null;
+  superintendente: string | null;
+};
 type LancamentoHome = {
   formulario_id: string;
   secao: string | null;
@@ -52,6 +63,16 @@ const MESES_HOME = [
   "Novembro",
   "Dezembro",
 ];
+
+const isoLocal = (data: Date) =>
+  `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(2, "0")}-${String(data.getDate()).padStart(2, "0")}`;
+
+const normalizarNome = (valor: string | null | undefined) =>
+  (valor || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLocaleLowerCase("pt-BR");
 
 const modulos = [
   {
@@ -88,7 +109,7 @@ const modulos = [
     to: "/acelera",
     tipo: "planejamento",
   },
-  { nome: "Previsão", descricao: "Previsto versus realizado", to: "/previsao", tipo: "previsao" },
+  { nome: "Pastas", descricao: "Volume de PV e análises bancárias", to: "/pastas", tipo: "pastas" },
 ] as const;
 
 function PaginaInicial() {
@@ -99,14 +120,31 @@ function PaginaInicial() {
   const [lancamentos, setLancamentos] = useState<LancamentoHome[]>([]);
   const [vendas, setVendas] = useState<VendaHome[]>([]);
   const [pastas, setPastas] = useState<PastaVolumeRow[]>([]);
-  const [pastasAbStored, setPastasAbStored] = useState(0);
   const [pastasLoading, setPastasLoading] = useState(true);
   const [agora, setAgora] = useState(new Date());
+  const [filtrosAbertos, setFiltrosAbertos] = useState(false);
+  const [filtroMes, setFiltroMes] = useState(() => isoLocal(new Date()).slice(0, 7));
+  const [filtroSemana, setFiltroSemana] = useState(() => isoLocal(new Date()));
+  const [filtroSup, setFiltroSup] = useState("todos");
+  const filtrosRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const timer = window.setInterval(() => setAgora(new Date()), 60_000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (!filtrosAbertos) return;
+    const fecharAoClicarFora = (event: MouseEvent) => {
+      const alvo = event.target as HTMLElement;
+      if (alvo.closest('[role="listbox"]') || alvo.closest("[data-radix-popper-content-wrapper]")) {
+        return;
+      }
+      if (filtrosRef.current && !filtrosRef.current.contains(alvo)) setFiltrosAbertos(false);
+    };
+    document.addEventListener("mousedown", fecharAoClicarFora);
+    return () => document.removeEventListener("mousedown", fecharAoClicarFora);
+  }, [filtrosAbertos]);
 
   useEffect(() => {
     (async () => {
@@ -124,7 +162,10 @@ function PaginaInicial() {
           .from("lancamentos_financeiros")
           .select("valor,tipo_gasto,mes,ano")
           .limit(1000),
-        supabase.from("previsoes").select("preciso_vendas,semana_inicio").limit(1000),
+        supabase
+          .from("previsoes")
+          .select("preciso_vendas,semana_inicio,superintendente")
+          .limit(1000),
         session?.access_token
           ? vendasList({ data: { token: session.access_token } }).catch(() => ({ vendas: [] }))
           : Promise.resolve({ vendas: [] }),
@@ -135,14 +176,36 @@ function PaginaInicial() {
       setPrevisoes((prev.data || []) as Previsao[]);
       setVendas(((vendasResposta as { vendas?: VendaHome[] })?.vendas || []) as VendaHome[]);
       if (listaForms.length) {
-        const { data: linhas } = await supabase
-          .from("lancamentos")
-          .select("formulario_id,secao,superintendente,meta_sup,contratados,reprovado")
-          .in(
-            "formulario_id",
-            listaForms.map((formulario) => formulario.id),
+        const idsFormularios = listaForms.map((formulario) => formulario.id);
+        const linhasCompletas: LancamentoHome[] = [];
+        const tamanhoPagina = 1000;
+        const tamanhoLoteFormularios = 100;
+
+        for (
+          let inicioLote = 0;
+          inicioLote < idsFormularios.length;
+          inicioLote += tamanhoLoteFormularios
+        ) {
+          const idsDoLote = idsFormularios.slice(
+            inicioLote,
+            inicioLote + tamanhoLoteFormularios,
           );
-        setLancamentos((linhas || []) as LancamentoHome[]);
+          for (let inicioPagina = 0; ; inicioPagina += tamanhoPagina) {
+            const { data: pagina, error: erroLinhas } = await supabase
+              .from("lancamentos")
+              .select("id,formulario_id,secao,superintendente,meta_sup,contratados,reprovado")
+              .in("formulario_id", idsDoLote)
+              .order("id", { ascending: true })
+              .range(inicioPagina, inicioPagina + tamanhoPagina - 1);
+            if (erroLinhas) throw erroLinhas;
+            linhasCompletas.push(...((pagina || []) as LancamentoHome[]));
+            if (!pagina || pagina.length < tamanhoPagina) break;
+          }
+        }
+
+        setLancamentos(linhasCompletas);
+      } else {
+        setLancamentos([]);
       }
     })();
   }, [session?.access_token]);
@@ -156,37 +219,68 @@ function PaginaInicial() {
     void pastasSheetsList({ data: { token: session.access_token } })
       .then((result) => {
         setPastas(result.rows);
-        setPastasAbStored(result.abTotal);
       })
       .catch(() => {
         setPastas([]);
-        setPastasAbStored(0);
       })
       .finally(() => setPastasLoading(false));
   }, [session?.access_token, isAdmin, isDiretor]);
 
-  const emAberto = formularios.filter((item) => ["editando", "finalizado"].includes(item.status));
-  const aguardandoValidacao = formularios.filter((item) => item.status === "finalizado");
-  const validados = formularios.filter((item) => item.status === "validado");
-  const mesAtual = agora.getMonth() + 1;
-  const anoAtual = agora.getFullYear();
-  const inicioSemana = new Date(agora);
+  const superintendentesFiltro = useMemo(() => {
+    const nomes = [
+      ...formularios.map((item) => item.superintendente),
+      ...lancamentos.map((item) => item.superintendente),
+      ...previsoes.map((item) => item.superintendente),
+      ...vendas.map((item) => item.superintendente),
+      ...pastas.map((item) => item.superintendente),
+    ].filter((item): item is string => Boolean(item?.trim()));
+    return Array.from(
+      nomes
+        .reduce((mapa, item) => {
+          const chave = normalizarNome(item);
+          if (!mapa.has(chave)) mapa.set(chave, item.trim());
+          return mapa;
+        }, new Map<string, string>())
+        .values(),
+    ).sort((a, b) => a.localeCompare(b, "pt-BR"));
+  }, [formularios, lancamentos, previsoes, vendas, pastas]);
+
+  const pertenceAoSup = (valor: string | null | undefined) =>
+    filtroSup === "todos" || normalizarNome(valor) === normalizarNome(filtroSup);
+  const [anoFiltrado, mesFiltrado] = filtroMes.split("-").map(Number);
+  const mesAtual = Number.isFinite(mesFiltrado) ? mesFiltrado : agora.getMonth() + 1;
+  const anoAtual = Number.isFinite(anoFiltrado) ? anoFiltrado : agora.getFullYear();
+  const referenciaSemana = /^\d{4}-\d{2}-\d{2}$/.test(filtroSemana)
+    ? new Date(`${filtroSemana}T12:00:00`)
+    : agora;
+  const inicioSemana = new Date(referenciaSemana);
   inicioSemana.setHours(0, 0, 0, 0);
   inicioSemana.setDate(inicioSemana.getDate() - ((inicioSemana.getDay() + 6) % 7));
   const fimSemana = new Date(inicioSemana);
   fimSemana.setDate(fimSemana.getDate() + 6);
-  const isoLocal = (data: Date) =>
-    `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(2, "0")}-${String(data.getDate()).padStart(2, "0")}`;
   const inicioSemanaISO = isoLocal(inicioSemana);
   const fimSemanaISO = isoLocal(fimSemana);
+  const formulariosMesBase = formularios.filter(
+    (formulario) =>
+      formulario.mes_referencia === mesAtual && formulario.ano_referencia === anoAtual,
+  );
+  const formulariosMes = formulariosMesBase.filter((formulario) =>
+    pertenceAoSup(formulario.superintendente || formulario.nome),
+  );
+  const emAberto = formulariosMes.filter((item) =>
+    ["editando", "finalizado"].includes(item.status),
+  );
+  const aguardandoValidacao = formulariosMes.filter((item) => item.status === "finalizado");
+  const validados = formulariosMes.filter((item) => item.status === "validado");
   const investimentoMes = financeiro
     .filter((item) => item.mes === mesAtual && item.ano === anoAtual)
     .reduce((total, item) => total + Number(item.valor || 0), 0);
   const previsaoAtual = previsoes
-    .filter((item) => item.semana_inicio === inicioSemanaISO)
+    .filter((item) => item.semana_inicio === inicioSemanaISO && pertenceAoSup(item.superintendente))
     .reduce((total, item) => total + Number(item.preciso_vendas || 0), 0);
   const vendasSemana = vendas.filter(
     (venda) =>
+      pertenceAoSup(venda.superintendente) &&
       !!venda.data_assinatura &&
       venda.data_assinatura >= inicioSemanaISO &&
       venda.data_assinatura <= fimSemanaISO,
@@ -195,11 +289,9 @@ function PaginaInicial() {
     (total, venda) => total + Number(venda.unidades || 0),
     0,
   );
-  const formulariosMes = formularios.filter(
-    (formulario) =>
-      formulario.mes_referencia === mesAtual && formulario.ano_referencia === anoAtual,
-  );
-  const planejamentosValidos = formulariosMes.filter(
+  const percentualPrevisao = previsaoAtual > 0 ? (realizadoAtual / previsaoAtual) * 100 : 0;
+  const saldoPrevisao = realizadoAtual - previsaoAtual;
+  const planejamentosValidos = formulariosMesBase.filter(
     (formulario) => formulario.tipo === "planejamento" && formulario.status === "validado",
   );
   const idsPlanejamento = new Set(planejamentosValidos.map((formulario) => formulario.id));
@@ -209,7 +301,12 @@ function PaginaInicial() {
         (linha) =>
           idsPlanejamento.has(linha.formulario_id) &&
           !linha.reprovado &&
-          (linha.secao || "principal") === "principal",
+          (linha.secao || "principal") === "principal" &&
+          pertenceAoSup(
+            linha.superintendente ||
+              planejamentosValidos.find((formulario) => formulario.id === linha.formulario_id)
+                ?.superintendente,
+          ),
       )
       .reduce((mapa, linha) => {
         const sup =
@@ -226,7 +323,7 @@ function PaginaInicial() {
       sup,
       planejado,
       realizado: vendasSemana
-        .filter((venda) => venda.superintendente === sup)
+        .filter((venda) => normalizarNome(venda.superintendente) === normalizarNome(sup))
         .reduce((total, venda) => total + Number(venda.unidades || 0), 0),
     }))
     .sort((a, b) => a.sup.localeCompare(b.sup, "pt-BR"));
@@ -250,7 +347,15 @@ function PaginaInicial() {
   const totalContratacoes = lancamentos
     .filter((linha) => idsContratacao.has(linha.formulario_id) && !linha.reprovado)
     .reduce((total, linha) => total + Number(linha.contratados || 0), 0);
-  const atividade = formularios.slice(0, 6);
+  const pastasPeriodo = pastas.filter(
+    (pasta) =>
+      pertenceAoSup(pasta.superintendente) && pasta.data_criacao?.slice(0, 7) === filtroMes,
+  );
+  const pastasAbPeriodo = pastasPeriodo.reduce(
+    (total, pasta) => total + Number(pasta.ab_quantidade || 0),
+    0,
+  );
+  const atividade = formulariosMes.slice(0, 6);
   const statusSistema =
     aguardandoValidacao.length > 0
       ? "ATENÇÃO NECESSÁRIA"
@@ -260,23 +365,109 @@ function PaginaInicial() {
 
   const contagemPorTipo = useMemo(
     () =>
-      formularios.reduce<Record<string, { total: number; pendentes: number }>>((mapa, item) => {
+      formulariosMes.reduce<Record<string, { total: number; pendentes: number }>>((mapa, item) => {
         const atual = mapa[item.tipo] || { total: 0, pendentes: 0 };
         atual.total += 1;
         if (item.status !== "validado") atual.pendentes += 1;
         mapa[item.tipo] = atual;
         return mapa;
       }, {}),
-    [formularios],
+    [formulariosMes],
   );
 
   return (
     <div className="space-y-5 pb-10">
-      <div className="flex items-center justify-between gap-3 py-2">
+      <div className="flex flex-wrap items-center justify-between gap-3 py-2">
         <div className="text-xl font-light uppercase tracking-[0.18em] text-[#39FF14]">
           Olá, {nome?.split(" ")[0] || "usuário"}
         </div>
-        <ResumoInicioButton token={session?.access_token ?? ""} />
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <ResumoInicioButton token={session?.access_token ?? ""} />
+          <div ref={filtrosRef} className="relative">
+            <button
+              type="button"
+              aria-expanded={filtrosAbertos}
+              aria-controls="inicio-filtros"
+              onClick={() => setFiltrosAbertos((aberto) => !aberto)}
+              className="group flex h-9 items-center gap-2 border border-[#39FF14]/40 bg-black/60 px-3 text-[10px] font-bold uppercase tracking-[0.25em] text-[#39FF14] transition-all hover:border-[#39FF14] hover:bg-[#39FF14]/10"
+            >
+              <span className="relative block h-4 w-6 shrink-0" aria-hidden>
+                <span
+                  className={`absolute top-1/2 h-[2px] w-3.5 bg-current shadow-[0_0_5px_currentColor] transition-all duration-300 ${filtrosAbertos ? "left-1/2 -translate-x-1/2 -translate-y-1/2 rotate-45" : "left-[22%] -translate-x-1/2 -translate-y-1/2 -rotate-[65deg]"}`}
+                />
+                <span
+                  className={`absolute top-1/2 h-[2px] w-3.5 bg-current shadow-[0_0_5px_currentColor] transition-all duration-300 ${filtrosAbertos ? "left-1/2 -translate-x-1/2 -translate-y-1/2 -rotate-45" : "left-[78%] -translate-x-1/2 -translate-y-1/2 -rotate-[65deg]"}`}
+                />
+              </span>
+              Filtro
+            </button>
+            <div
+              id="inicio-filtros"
+              className={`absolute right-0 top-[calc(100%+10px)] z-50 w-[min(92vw,340px)] origin-top-right border border-[#39FF14]/35 bg-black/95 p-4 shadow-[0_0_35px_rgba(57,255,20,0.14)] backdrop-blur-2xl transition-all duration-200 ${filtrosAbertos ? "visible translate-y-0 opacity-100" : "invisible -translate-y-2 opacity-0"}`}
+            >
+              <div className="mb-4 border-b border-[#39FF14]/20 pb-2 text-[9px] uppercase tracking-[0.3em] text-white/40">
+                / / Filtrar visão
+              </div>
+              <div className="space-y-3">
+                <label className="block">
+                  <span className="mb-1.5 block text-[8px] uppercase tracking-[0.18em] text-white/35">
+                    Competência mensal
+                  </span>
+                  <Input
+                    type="month"
+                    value={filtroMes}
+                    onChange={(event) => setFiltroMes(event.target.value)}
+                    className="border-[#39FF14]/25 text-[10px] uppercase tracking-[0.12em] [color-scheme:dark]"
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-1.5 block text-[8px] uppercase tracking-[0.18em] text-white/35">
+                    Semana de referência
+                  </span>
+                  <Input
+                    type="date"
+                    value={filtroSemana}
+                    onChange={(event) => setFiltroSemana(event.target.value)}
+                    className="border-[#39FF14]/25 text-[10px] uppercase tracking-[0.12em] [color-scheme:dark]"
+                  />
+                  <span className="mt-1 block text-[7px] uppercase tracking-[0.1em] text-white/20">
+                    Selecione qualquer dia da semana
+                  </span>
+                </label>
+                <div>
+                  <span className="mb-1.5 block text-[8px] uppercase tracking-[0.18em] text-white/35">
+                    Superintendente
+                  </span>
+                  <Select value={filtroSup} onValueChange={setFiltroSup}>
+                    <SelectTrigger className="border-[#39FF14]/25 text-[9px] uppercase tracking-[0.14em]">
+                      <SelectValue placeholder="TODOS OS SUPERINTENDENTES" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="todos">TODOS OS SUPERINTENDENTES</SelectItem>
+                      {superintendentesFiltro.map((superintendente) => (
+                        <SelectItem key={superintendente} value={superintendente}>
+                          {superintendente.toLocaleUpperCase("pt-BR")}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const hoje = new Date();
+                    setFiltroMes(isoLocal(hoje).slice(0, 7));
+                    setFiltroSemana(isoLocal(hoje));
+                    setFiltroSup("todos");
+                  }}
+                  className="h-9 w-full border border-[#39FF14]/30 text-[8px] font-bold uppercase tracking-[0.2em] text-[#39FF14] transition hover:border-[#39FF14] hover:bg-[#39FF14]/10"
+                >
+                  Limpar filtros
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div className="grid gap-5 xl:grid-cols-[1fr_320px]">
@@ -408,12 +599,12 @@ function PaginaInicial() {
                 </div>
               </Link>
               <Link
-                to="/previsao"
+                to="/pastas"
                 className="group border border-[#39FF14]/20 bg-black/65 p-4 transition hover:border-[#39FF14]/60 sm:col-span-2 lg:col-span-1"
               >
                 <div className="flex items-center justify-between">
                   <span className="text-[9px] uppercase tracking-[0.2em] text-[#39FF14]">
-                    / / Previsão
+                    / / Pastas
                   </span>
                   <span className="text-[7px] uppercase tracking-[0.12em] text-[#39FF14]/55">
                     Abrir →
@@ -422,19 +613,19 @@ function PaginaInicial() {
                 <div className="mt-4 grid grid-cols-[1fr_auto_1fr] items-end gap-3">
                   <div>
                     <div className="font-mono text-2xl text-white">
-                      {previsaoAtual.toLocaleString("pt-BR")}
+                      {pastasLoading ? "—" : pastasPeriodo.length.toLocaleString("pt-BR")}
                     </div>
                     <div className="text-[7px] uppercase tracking-[0.1em] text-white/30">
-                      Previsto
+                      Total de PV
                     </div>
                   </div>
                   <div className="pb-2 text-[#39FF14]/40">/</div>
                   <div className="text-right">
                     <div className="font-mono text-2xl text-[#39FF14]">
-                      {realizadoAtual.toLocaleString("pt-BR")}
+                      {pastasLoading ? "—" : pastasAbPeriodo.toLocaleString("pt-BR")}
                     </div>
                     <div className="text-[7px] uppercase tracking-[0.1em] text-white/30">
-                      Realizado
+                      Análises bancárias
                     </div>
                   </div>
                 </div>
@@ -495,15 +686,55 @@ function PaginaInicial() {
         </aside>
       </div>
 
-      {(isAdmin || isDiretor) && (
-        <PastasOverview
-          rows={pastas}
-          loading={pastasLoading}
-          abStored={pastasAbStored}
-          showModuleLink
-          showSupVolume={false}
-        />
-      )}
+      <section className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-[9px] uppercase tracking-[0.22em] text-[#39FF14]">
+              / / Previsão
+            </div>
+            <div className="mt-1 text-[8px] uppercase tracking-[0.12em] text-white/30">
+              Semana{" "}
+              {inicioSemana.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}—
+              {fimSemana.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}
+            </div>
+          </div>
+          <Link
+            to="/previsao"
+            className="text-[8px] uppercase tracking-[0.14em] text-[#39FF14]/65 transition hover:text-[#39FF14]"
+          >
+            Abrir Previsão →
+          </Link>
+        </div>
+
+        <div className="grid min-h-[300px] place-items-center gap-8 border border-[#39FF14]/25 bg-black/70 p-6 sm:grid-cols-[220px_1fr]">
+          <CyberProgressRing
+            percentual={percentualPrevisao}
+            valor={`${percentualPrevisao.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`}
+            rotulo="Realizado"
+            ariaLabel={`Previsão realizada em ${percentualPrevisao.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`}
+          />
+          <div className="grid w-full gap-px bg-white/10 sm:grid-cols-3">
+            <div className="bg-black/85 p-5">
+              <div className="text-[8px] uppercase tracking-[0.18em] text-white/35">Previsão</div>
+              <div className="mt-2 font-mono text-4xl font-light text-white">
+                {previsaoAtual.toLocaleString("pt-BR")}
+              </div>
+            </div>
+            <div className="bg-black/85 p-5">
+              <div className="text-[8px] uppercase tracking-[0.18em] text-white/35">Realizado</div>
+              <div className="mt-2 font-mono text-4xl font-light text-[#39FF14]">
+                {realizadoAtual.toLocaleString("pt-BR")}
+              </div>
+            </div>
+            <div className="bg-black/85 p-5">
+              <div className="text-[8px] uppercase tracking-[0.18em] text-white/35">Saldo</div>
+              <div className="mt-2 font-mono text-4xl font-light text-white">
+                {saldoPrevisao.toLocaleString("pt-BR")}
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
     </div>
   );
 }

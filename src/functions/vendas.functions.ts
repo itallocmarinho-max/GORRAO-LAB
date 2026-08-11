@@ -217,7 +217,7 @@ export const vendasList = createServerFn({ method: "POST" })
         .from("vendas_hierarquia_aliases")
         .select("tipo, alias, alias_normalizado, profile_id, gerente_id, externo"),
       supabaseAdmin.from("profiles").select("id, nome, email"),
-      supabaseAdmin.from("gerentes").select("id, nome, superintendente_id, tipo_operacao"),
+      supabaseAdmin.from("gerentes").select("id, nome, superintendente_id"),
     ]);
     // produto aliases — resolve produto_id por empreendimento quando a venda não tiver produto setado
     const { data: prodAliases } = await supabaseAdmin
@@ -232,22 +232,18 @@ export const vendasList = createServerFn({ method: "POST" })
     for (const p of profs ?? []) profName.set((p as any).id, (p as any).nome || (p as any).email || "");
     const gerInfo = new Map<
       string,
-      { nome: string; superintendente_id: string | null; canal: "pdv" | "cia" | null }
+      { nome: string; superintendente_id: string | null }
     >();
     for (const g of gers ?? []) {
-      const canal = ["pdv", "cia"].includes(String((g as any).tipo_operacao ?? "").toLowerCase())
-        ? (String((g as any).tipo_operacao).toLowerCase() as "pdv" | "cia")
-        : null;
       gerInfo.set((g as any).id, {
         nome: (g as any).nome || "",
         superintendente_id: (g as any).superintendente_id ?? null,
-        canal,
       });
     }
     const supByNorm = new Map<string, string>(); // norm -> sup name
     const gerByNorm = new Map<
       string,
-      { nome: string; sup_nome: string | null; canal: "pdv" | "cia" | null }
+      { nome: string; sup_nome: string | null }
     >();
     for (const gerente of gerInfo.values()) {
       gerByNorm.set(normHier(gerente.nome), {
@@ -255,7 +251,6 @@ export const vendasList = createServerFn({ method: "POST" })
         sup_nome: gerente.superintendente_id
           ? (profName.get(gerente.superintendente_id) ?? null)
           : null,
-        canal: gerente.canal,
       });
     }
     for (const a of aliases ?? []) {
@@ -272,7 +267,6 @@ export const vendasList = createServerFn({ method: "POST" })
             sup_nome: g.superintendente_id
               ? (profName.get(g.superintendente_id) ?? null)
               : null,
-            canal: g.canal,
           });
         }
       }
@@ -305,7 +299,6 @@ export const vendasList = createServerFn({ method: "POST" })
           gerente: credito.gerente,
           corretor: credito.corretor,
           diretor: credito.diretor,
-          canal: credito.gerente_id ? (gerInfo.get(credito.gerente_id)?.canal ?? null) : null,
           vgv: 0,
           unidades: credito.unidades,
           produto_id: null as string | null,
@@ -328,7 +321,6 @@ export const vendasList = createServerFn({ method: "POST" })
           gerente: credito.gerente,
           corretor: credito.corretor,
           diretor: credito.diretor,
-          canal: credito.gerente_id ? (gerInfo.get(credito.gerente_id)?.canal ?? null) : null,
           unidades: credito.unidades,
         })),
     );
@@ -363,10 +355,8 @@ export const vendasList = createServerFn({ method: "POST" })
         const r = gerByNorm.get(normHier(String(p.gerente)));
         if (r) {
           out.gerente = r.nome;
-          out.canal = r.canal;
         }
       }
-      if (!("canal" in out)) out.canal = null;
       return out;
     });
 
@@ -626,12 +616,12 @@ export const previsaoGerentesList = createServerFn({ method: "POST" })
     await assertAuth(data.token);
     const { data: gers, error } = await supabaseAdmin
       .from("gerentes")
-      .select("id, nome, ativo, inativo_mes, inativo_ano, tipo_operacao")
+      .select("id, nome, ativo, inativo_mes, inativo_ano")
       .eq("superintendente_id", data.superintendente_id)
       .order("nome");
     if (error) throw new Error(error.message);
     return (gers ?? []).filter((g) => gerenteDisponivelEm(g, data.mes_referencia, data.ano_referencia))
-      .map((g: any) => ({ id: g.id, nome: g.nome, tipo_operacao: g.tipo_operacao }));
+      .map((g: any) => ({ id: g.id, nome: g.nome }));
   });
 
 // ============ Previsão em massa (vários gerentes na mesma semana) ============

@@ -44,9 +44,8 @@ function UsersPage() {
   const [editIsAdmin, setEditIsAdmin] = useState(false);
   const [gerSupId, setGerSupId] = useState<string | null>(null);
   const [gerSupNome, setGerSupNome] = useState<string>("");
-  const [gerentes, setGerentes] = useState<Array<{ id: string; nome: string; ativo: boolean; inativo_mes: number | null; inativo_ano: number | null; tipo_operacao: "pdv" | "cia" | null }>>([]);
+  const [gerentes, setGerentes] = useState<Array<{ id: string; nome: string; ativo: boolean; inativo_mes: number | null; inativo_ano: number | null }>>([]);
   const [novoGerente, setNovoGerente] = useState("");
-  const [novoGerenteTipo, setNovoGerenteTipo] = useState<"pdv" | "cia">("pdv");
   const [gerBusy, setGerBusy] = useState(false);
   const [inativarId, setInativarId] = useState<string | null>(null);
   const [inativarMes, setInativarMes] = useState<string>(String(new Date().getMonth() + 1));
@@ -100,7 +99,7 @@ function UsersPage() {
   const loadGerentes = async (supId: string) => {
     const { data, error } = await supabase
       .from("gerentes")
-      .select("id, nome, ativo, inativo_mes, inativo_ano, tipo_operacao")
+      .select("id, nome, ativo, inativo_mes, inativo_ano")
       .eq("superintendente_id", supId)
       .order("nome");
     if (error) { toast.error(error.message); return; }
@@ -120,18 +119,10 @@ function UsersPage() {
     setGerBusy(true);
     const { error } = await supabase
       .from("gerentes")
-      .insert({ superintendente_id: gerSupId, nome: novoGerente.trim(), tipo_operacao: novoGerenteTipo });
+      .insert({ superintendente_id: gerSupId, nome: novoGerente.trim() });
     setGerBusy(false);
     if (error) return toast.error(error.message);
     setNovoGerente("");
-    setNovoGerenteTipo("pdv");
-    loadGerentes(gerSupId);
-  };
-
-  const alterarTipoGerente = async (id: string, tipo_operacao: "pdv" | "cia") => {
-    if (!gerSupId) return;
-    const { error } = await supabase.from("gerentes").update({ tipo_operacao }).eq("id", id);
-    if (error) return toast.error(error.message);
     loadGerentes(gerSupId);
   };
 
@@ -484,17 +475,13 @@ function UsersPage() {
       <Dialog open={!!gerSupId} onOpenChange={(o) => { if (!o) { setGerSupId(null); setGerentes([]); } }}>
         <DialogContent className="verba-cyber">
           <DialogHeader><DialogTitle>Gerentes de {gerSupNome}</DialogTitle></DialogHeader>
-          <form onSubmit={addGerente} className="grid grid-cols-[1fr_120px_auto] gap-2">
+          <form onSubmit={addGerente} className="grid grid-cols-[1fr_auto] gap-2">
             <Input
               value={novoGerente}
               onChange={(e) => setNovoGerente(e.target.value)}
               placeholder="Nome do gerente"
               maxLength={120}
             />
-            <Select value={novoGerenteTipo} onValueChange={(v) => setNovoGerenteTipo(v as "pdv" | "cia")}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent><SelectItem value="pdv">PDV</SelectItem><SelectItem value="cia">CIA</SelectItem></SelectContent>
-            </Select>
             <Button type="submit" disabled={gerBusy || !novoGerente.trim()}>
               <Plus className="h-4 w-4 mr-1" /> Adicionar
             </Button>
@@ -507,7 +494,6 @@ function UsersPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Nome</TableHead>
-                    <TableHead className="w-28">Tipo</TableHead>
                     <TableHead className="w-24">Ativo</TableHead>
                     <TableHead>Inativo desde</TableHead>
                     <TableHead className="w-12"></TableHead>
@@ -517,12 +503,6 @@ function UsersPage() {
                   {gerentes.map((g) => (
                     <TableRow key={g.id}>
                       <TableCell>{g.nome}</TableCell>
-                      <TableCell>
-                        <Select value={g.tipo_operacao ?? "pdv"} onValueChange={(v) => alterarTipoGerente(g.id, v as "pdv" | "cia")}>
-                          <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
-                          <SelectContent><SelectItem value="pdv">PDV</SelectItem><SelectItem value="cia">CIA</SelectItem></SelectContent>
-                        </Select>
-                      </TableCell>
                       <TableCell><Switch checked={g.ativo} onCheckedChange={(v) => toggleGerente(g.id, v)} /></TableCell>
                       <TableCell className="text-sm text-muted-foreground">
                         {!g.ativo && g.inativo_mes && g.inativo_ano
