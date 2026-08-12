@@ -46,7 +46,7 @@ const Row = z.object({
 const ImportInput = z.object({
   token: z.string().min(1),
   rows: z.array(Row).min(1).max(500),
-  vinculos: z.array(LinkBase).min(3).max(5000),
+  vinculos: z.array(LinkBase).max(5000),
 });
 const SummaryInput = z.object({
   token: z.string().min(1),

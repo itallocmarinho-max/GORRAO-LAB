@@ -26,6 +26,7 @@ import {
   contabilPessoaCreate,
   contabilVinculosList,
 } from "@/functions/contabil.functions";
+import { supabase } from "@/integrations/supabase/client";
 
 type Tipo = "diretor" | "superintendente" | "gerente";
 type Target = { kind: "profile" | "gerente" | "pessoa"; id: string };
@@ -679,9 +680,34 @@ export function ContabilHistorico({
       ignored = 0;
     try {
       for (let i = 0; i < rows.length; i += 150) {
-        const result = await contabilHistoricoImport({
-          data: { token, rows: rows.slice(i, i + 150), vinculos },
-        });
+        const chunk = rows.slice(i, i + 150);
+        const request = async (forceRefresh: boolean) => {
+          let session = (await supabase.auth.getSession()).data.session;
+          const expiresSoon =
+            !session?.expires_at || session.expires_at * 1000 - Date.now() < 120_000;
+          if (forceRefresh || expiresSoon) {
+            const refreshed = await supabase.auth.refreshSession();
+            if (refreshed.error) throw refreshed.error;
+            session = refreshed.data.session;
+          }
+          if (!session?.access_token) throw new Error("Sessão expirada. Entre novamente.");
+          return contabilHistoricoImport({
+            data: {
+              token: session.access_token,
+              rows: chunk,
+              // Depois do primeiro lote, os vínculos já estão persistidos no Supabase.
+              vinculos: i === 0 ? vinculos : [],
+            },
+          });
+        };
+        let result;
+        try {
+          result = await request(false);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          if (!/n[aã]o autenticado|jwt|token|sess[aã]o expirada/i.test(message)) throw error;
+          result = await request(true);
+        }
         imported += result.imported;
         ignored += result.ignored;
       }
