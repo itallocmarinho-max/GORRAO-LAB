@@ -12,6 +12,7 @@ const VinculoInput = z.object({
   token: z.string().min(1),
   origem_tipo: OrigemTipo,
   alias: z.string().trim().min(1).max(200),
+  contexto_alias: z.string().trim().max(200).default(""),
   destino_tipo: DestinoTipo,
   target_id: z.string().uuid(),
 });
@@ -99,10 +100,16 @@ async function saveVinculo(userId: string, input: Omit<z.infer<typeof VinculoInp
     throw new Error("O SUP da tabela deve ser vinculado a um diretor ou superintendente interno");
   }
   const target = await resolveTarget(input.destino_tipo, input.target_id);
+  const contextoAlias = input.origem_tipo === "destino" ? input.contexto_alias.trim() : "";
+  if (input.origem_tipo === "destino" && input.destino_tipo === "gerente" && !contextoAlias) {
+    throw new Error("O vínculo do gerente precisa informar o SUP da linha");
+  }
   const row = {
     origem_tipo: input.origem_tipo,
     alias: input.alias.trim(),
     alias_normalizado: normalizeAlias(input.alias),
+    contexto_alias: contextoAlias,
+    contexto_normalizado: normalizeAlias(contextoAlias),
     destino_tipo: input.destino_tipo,
     profile_id: target.profile_id,
     gerente_id: target.gerente_id,
@@ -111,8 +118,10 @@ async function saveVinculo(userId: string, input: Omit<z.infer<typeof VinculoInp
   };
   const { data, error } = await (supabaseAdmin as any)
     .from("verba_cury_historico_vinculos")
-    .upsert(row, { onConflict: "origem_tipo,alias_normalizado" })
-    .select("id,origem_tipo,alias,alias_normalizado,destino_tipo,profile_id,gerente_id,updated_at")
+    .upsert(row, { onConflict: "origem_tipo,alias_normalizado,contexto_normalizado" })
+    .select(
+      "id,origem_tipo,alias,alias_normalizado,contexto_alias,contexto_normalizado,destino_tipo,profile_id,gerente_id,updated_at",
+    )
     .single();
   if (error) throw new Error(error.message);
   return data;
@@ -131,7 +140,7 @@ export const verbaHistoricoVinculosList = createServerFn({ method: "POST" })
     const { data: rows, error } = await (supabaseAdmin as any)
       .from("verba_cury_historico_vinculos")
       .select(
-        "id,origem_tipo,alias,alias_normalizado,destino_tipo,profile_id,gerente_id,updated_at",
+        "id,origem_tipo,alias,alias_normalizado,contexto_alias,contexto_normalizado,destino_tipo,profile_id,gerente_id,updated_at",
       )
       .order("alias", { ascending: true });
     if (error) throw new Error(error.message);
@@ -172,20 +181,27 @@ export const verbaHistoricoImport = createServerFn({ method: "POST" })
     const data = validation.data;
     const userId = await assertAdmin(data.token);
 
-    for (const { origem_tipo, alias, destino_tipo, target_id } of data.vinculos) {
-      await saveVinculo(userId, { origem_tipo, alias, destino_tipo, target_id });
+    for (const { origem_tipo, alias, contexto_alias, destino_tipo, target_id } of data.vinculos) {
+      await saveVinculo(userId, { origem_tipo, alias, contexto_alias, destino_tipo, target_id });
     }
 
     const { data: saved, error: linksError } = await (supabaseAdmin as any)
       .from("verba_cury_historico_vinculos")
-      .select("origem_tipo,alias,alias_normalizado,destino_tipo,profile_id,gerente_id");
+      .select(
+        "origem_tipo,alias,alias_normalizado,contexto_alias,contexto_normalizado,destino_tipo,profile_id,gerente_id",
+      );
     if (linksError) throw new Error(linksError.message);
 
     const supLinks = new Map<string, any>();
     const destinationLinks = new Map<string, any>();
     for (const link of saved ?? []) {
       const target = link.origem_tipo === "superintendente" ? supLinks : destinationLinks;
-      target.set(link.alias_normalizado, link);
+      target.set(
+        link.origem_tipo === "destino"
+          ? `${link.alias_normalizado}:${link.contexto_normalizado}`
+          : link.alias_normalizado,
+        link,
+      );
     }
 
     const profileIds = new Set<string>();
@@ -217,7 +233,9 @@ export const verbaHistoricoImport = createServerFn({ method: "POST" })
     const requiredSupIds = new Set<string>();
     for (const row of data.rows) {
       const source = supLinks.get(normalizeAlias(row.sup));
-      const destination = destinationLinks.get(normalizeAlias(row.destino));
+      const destination =
+        destinationLinks.get(`${normalizeAlias(row.destino)}:${normalizeAlias(row.sup)}`) ??
+        destinationLinks.get(`${normalizeAlias(row.destino)}:`);
       if (!source) throw new Error(`Linha ${row.linha}: SUP "${row.sup}" ainda nao foi vinculado`);
       if (!destination)
         throw new Error(`Linha ${row.linha}: destino "${row.destino}" ainda nao foi vinculado`);
@@ -279,7 +297,9 @@ export const verbaHistoricoImport = createServerFn({ method: "POST" })
     const prepared: Prepared[] = [];
     for (const row of data.rows) {
       const sourceLink = supLinks.get(normalizeAlias(row.sup));
-      const destinationLink = destinationLinks.get(normalizeAlias(row.destino));
+      const destinationLink =
+        destinationLinks.get(`${normalizeAlias(row.destino)}:${normalizeAlias(row.sup)}`) ??
+        destinationLinks.get(`${normalizeAlias(row.destino)}:`);
       const owner = profileById.get(sourceLink.profile_id) as any;
       if (!owner || (owner.cargo !== "superintendente" && owner.cargo !== "diretor")) {
         throw new Error(
@@ -299,6 +319,11 @@ export const verbaHistoricoImport = createServerFn({ method: "POST" })
       if (destinationLink.destino_tipo === "gerente") {
         const gerente = gerenteById.get(destinationLink.gerente_id) as any;
         const gerenteSup = profileById.get(gerente.superintendente_id) as any;
+        if (owner.cargo === "superintendente" && gerente.superintendente_id !== owner.id) {
+          throw new Error(
+            `Linha ${row.linha}: o gerente "${row.destino}" não pertence ao SUP "${row.sup}" da linha`,
+          );
+        }
         destinationName = gerente.nome;
         gerenteName = gerente.nome;
         hierarchySupName = gerenteSup?.nome || gerenteSup?.email || ownerName;

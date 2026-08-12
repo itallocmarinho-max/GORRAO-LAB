@@ -186,10 +186,7 @@ function PaginaInicial() {
           inicioLote < idsFormularios.length;
           inicioLote += tamanhoLoteFormularios
         ) {
-          const idsDoLote = idsFormularios.slice(
-            inicioLote,
-            inicioLote + tamanhoLoteFormularios,
-          );
+          const idsDoLote = idsFormularios.slice(inicioLote, inicioLote + tamanhoLoteFormularios);
           for (let inicioPagina = 0; ; inicioPagina += tamanhoPagina) {
             const { data: pagina, error: erroLinhas } = await supabase
               .from("lancamentos")
@@ -482,10 +479,10 @@ function PaginaInicial() {
               <div className="relative flex h-full flex-col">
                 <div className="flex items-center justify-between">
                   <div>
-                    <div className="text-[9px] uppercase tracking-[0.22em] text-[#39FF14]">
+                    <div className="text-xs font-bold uppercase tracking-[0.22em] text-[#39FF14]">
                       / / Planejamento
                     </div>
-                    <div className="mt-1 text-[8px] uppercase tracking-[0.12em] text-white/30">
+                    <div className="mt-1 text-[10px] uppercase tracking-[0.12em] text-white/40">
                       {MESES_HOME[mesAtual - 1]} · semana{" "}
                       {inicioSemana.toLocaleDateString("pt-BR", {
                         day: "2-digit",
@@ -494,22 +491,23 @@ function PaginaInicial() {
                       —{fimSemana.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}
                     </div>
                   </div>
-                  <span className="text-[8px] uppercase tracking-[0.12em] text-[#39FF14]/60">
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#39FF14]/70">
                     Abrir planejamento →
                   </span>
                 </div>
-                <div className="mt-7 grid items-center gap-6 sm:grid-cols-[170px_1fr]">
+                <div className="mt-6 grid items-center gap-7 sm:grid-cols-[205px_1fr]">
                   <CyberProgressRing
                     percentual={percentualPlanejamento}
                     valor={`${percentualPlanejamento.toLocaleString("pt-BR", { maximumFractionDigits: 0 })}%`}
                     rotulo="Realizado"
+                    tamanho="grande"
                   />
                   <div>
-                    <div className="text-[9px] uppercase tracking-[0.18em] text-white/35">
+                    <div className="text-xs font-semibold uppercase tracking-[0.18em] text-white/50">
                       Planejado
                     </div>
                     <div className="mt-2 flex items-end gap-3">
-                      <strong className="font-mono text-4xl font-light text-white">
+                      <strong className="font-mono text-6xl font-light leading-none text-white">
                         {metaPlanejada.toLocaleString("pt-BR")}
                       </strong>
                     </div>
@@ -519,9 +517,11 @@ function PaginaInicial() {
                         style={{ width: `${Math.min(percentualPlanejamento, 100)}%` }}
                       />
                     </div>
-                    <div className="mt-3 flex justify-between text-[9px] uppercase tracking-[0.13em]">
-                      <span className="text-white/35">Realizado até agora</span>
-                      <strong className="font-mono text-[#39FF14]">
+                    <div className="mt-4 flex items-end justify-between gap-4 uppercase tracking-[0.13em]">
+                      <span className="text-[11px] font-semibold text-white/45">
+                        Realizado até agora
+                      </span>
+                      <strong className="font-mono text-2xl leading-none text-[#39FF14]">
                         {metaRealizada.toLocaleString("pt-BR")}
                       </strong>
                     </div>
@@ -529,12 +529,12 @@ function PaginaInicial() {
                 </div>
                 <div className="mt-auto grid gap-px border-t border-white/10 bg-white/10 pt-px sm:grid-cols-2 xl:grid-cols-3">
                   {metasPorSup.map((item) => (
-                    <div key={item.sup} className="bg-black/80 px-3 py-2">
-                      <div className="truncate text-[8px] font-bold uppercase tracking-[0.13em] text-white/65">
+                    <div key={item.sup} className="bg-black/80 px-4 py-3">
+                      <div className="truncate text-[10px] font-bold uppercase tracking-[0.13em] text-white/75">
                         {item.sup}
                       </div>
-                      <div className="mt-1 flex items-center justify-between font-mono text-[10px]">
-                        <span className="text-white/35">
+                      <div className="mt-2 flex items-center justify-between font-mono text-base font-semibold">
+                        <span className="text-white/55">
                           {item.planejado.toLocaleString("pt-BR")}
                         </span>
                         <span className="text-[#39FF14]">
@@ -559,17 +559,17 @@ function PaginaInicial() {
                 className="group border border-white/10 bg-[linear-gradient(135deg,rgba(57,255,20,.045),rgba(0,0,0,.8))] p-4 transition hover:border-[#39FF14]/55"
               >
                 <div className="flex items-center justify-between">
-                  <span className="text-[9px] uppercase tracking-[0.2em] text-[#39FF14]">
+                  <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-[#39FF14]">
                     / / Verba Cury
                   </span>
                   <span className="text-[7px] uppercase tracking-[0.12em] text-[#39FF14]/55">
                     Abrir →
                   </span>
                 </div>
-                <div className="mt-5 text-[8px] uppercase tracking-[0.14em] text-white/30">
+                <div className="mt-5 text-[10px] uppercase tracking-[0.14em] text-white/40">
                   Total investido
                 </div>
-                <div className="mt-1 font-mono text-3xl font-light text-[#39FF14]">
+                <div className="mt-2 font-mono text-4xl font-light text-[#39FF14]">
                   {brl(totalVerba)}
                 </div>
               </Link>
@@ -579,7 +579,7 @@ function PaginaInicial() {
                 className="group border border-white/10 bg-black/65 p-4 transition hover:border-[#39FF14]/55"
               >
                 <div className="flex items-center justify-between">
-                  <span className="text-[9px] uppercase tracking-[0.2em] text-[#39FF14]">
+                  <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-[#39FF14]">
                     / / Contratações
                   </span>
                   <span className="text-[7px] uppercase tracking-[0.12em] text-[#39FF14]/55">
@@ -588,10 +588,10 @@ function PaginaInicial() {
                 </div>
                 <div className="mt-4 flex items-end justify-between">
                   <div>
-                    <div className="font-mono text-3xl font-light text-white">
+                    <div className="font-mono text-4xl font-light text-white">
                       {totalContratacoes}
                     </div>
-                    <div className="mt-1 text-[8px] uppercase tracking-[0.12em] text-white/30">
+                    <div className="mt-2 text-[10px] uppercase tracking-[0.12em] text-white/40">
                       Contratados no mês
                     </div>
                   </div>
@@ -603,7 +603,7 @@ function PaginaInicial() {
                 className="group border border-[#39FF14]/20 bg-black/65 p-4 transition hover:border-[#39FF14]/60 sm:col-span-2 lg:col-span-1"
               >
                 <div className="flex items-center justify-between">
-                  <span className="text-[9px] uppercase tracking-[0.2em] text-[#39FF14]">
+                  <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-[#39FF14]">
                     / / Pastas
                   </span>
                   <span className="text-[7px] uppercase tracking-[0.12em] text-[#39FF14]/55">
@@ -612,19 +612,19 @@ function PaginaInicial() {
                 </div>
                 <div className="mt-4 grid grid-cols-[1fr_auto_1fr] items-end gap-3">
                   <div>
-                    <div className="font-mono text-2xl text-white">
+                    <div className="font-mono text-3xl text-white">
                       {pastasLoading ? "—" : pastasPeriodo.length.toLocaleString("pt-BR")}
                     </div>
-                    <div className="text-[7px] uppercase tracking-[0.1em] text-white/30">
+                    <div className="mt-1 text-[9px] uppercase tracking-[0.1em] text-white/40">
                       Total de PV
                     </div>
                   </div>
                   <div className="pb-2 text-[#39FF14]/40">/</div>
                   <div className="text-right">
-                    <div className="font-mono text-2xl text-[#39FF14]">
+                    <div className="font-mono text-3xl text-[#39FF14]">
                       {pastasLoading ? "—" : pastasAbPeriodo.toLocaleString("pt-BR")}
                     </div>
-                    <div className="text-[7px] uppercase tracking-[0.1em] text-white/30">
+                    <div className="mt-1 text-[9px] uppercase tracking-[0.1em] text-white/40">
                       Análises bancárias
                     </div>
                   </div>
@@ -689,7 +689,7 @@ function PaginaInicial() {
       <section className="space-y-3">
         <div className="flex items-center justify-between">
           <div>
-            <div className="text-[9px] uppercase tracking-[0.22em] text-[#39FF14]">
+            <div className="text-xs font-bold uppercase tracking-[0.22em] text-[#39FF14]">
               / / Previsão
             </div>
             <div className="mt-1 text-[8px] uppercase tracking-[0.12em] text-white/30">
@@ -715,20 +715,26 @@ function PaginaInicial() {
           />
           <div className="grid w-full gap-px bg-white/10 sm:grid-cols-3">
             <div className="bg-black/85 p-5">
-              <div className="text-[8px] uppercase tracking-[0.18em] text-white/35">Previsão</div>
-              <div className="mt-2 font-mono text-4xl font-light text-white">
+              <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/45">
+                Previsão
+              </div>
+              <div className="mt-2 font-mono text-5xl font-light text-white">
                 {previsaoAtual.toLocaleString("pt-BR")}
               </div>
             </div>
             <div className="bg-black/85 p-5">
-              <div className="text-[8px] uppercase tracking-[0.18em] text-white/35">Realizado</div>
-              <div className="mt-2 font-mono text-4xl font-light text-[#39FF14]">
+              <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/45">
+                Realizado
+              </div>
+              <div className="mt-2 font-mono text-5xl font-light text-[#39FF14]">
                 {realizadoAtual.toLocaleString("pt-BR")}
               </div>
             </div>
             <div className="bg-black/85 p-5">
-              <div className="text-[8px] uppercase tracking-[0.18em] text-white/35">Saldo</div>
-              <div className="mt-2 font-mono text-4xl font-light text-white">
+              <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/45">
+                Saldo
+              </div>
+              <div className="mt-2 font-mono text-5xl font-light text-white">
                 {saldoPrevisao.toLocaleString("pt-BR")}
               </div>
             </div>

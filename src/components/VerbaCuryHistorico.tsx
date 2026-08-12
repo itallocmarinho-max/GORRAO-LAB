@@ -38,6 +38,8 @@ type SavedLink = {
   origem_tipo: OrigemTipo;
   alias: string;
   alias_normalizado: string;
+  contexto_alias: string;
+  contexto_normalizado: string;
   destino_tipo: DestinoTipo;
   profile_id: string | null;
   gerente_id: string | null;
@@ -267,6 +269,7 @@ export function VerbaCuryHistorico({
   );
   const [manualOrigin, setManualOrigin] = useState<OrigemTipo>("superintendente");
   const [manualAlias, setManualAlias] = useState("");
+  const [manualContext, setManualContext] = useState("");
   const [manualTarget, setManualTarget] = useState("");
   const [savingLink, setSavingLink] = useState(false);
 
@@ -316,12 +319,34 @@ export function VerbaCuryHistorico({
     () =>
       new Map(
         savedLinks.map((link) => [
-          `${link.origem_tipo}:${link.alias_normalizado}`,
+          `${link.origem_tipo}:${link.alias_normalizado}:${link.contexto_normalizado || ""}`,
           targetValue(link),
         ]),
       ),
     [savedLinks],
   );
+
+  const destinationValue = (key: string, item: { alias: string; supAlias: string }) => {
+    const selected = destinationSelections[key];
+    if (selected) return selected;
+    const contextual = savedMap.get(`destino:${normalize(item.alias)}:${normalize(item.supAlias)}`);
+    if (contextual) return contextual;
+
+    // Vínculos antigos não tinham o SUP como contexto. Eles continuam válidos para
+    // diretor/SUP, mas gerente só pode ser reaproveitado se pertencer ao SUP da linha.
+    const legacy = savedMap.get(`destino:${normalize(item.alias)}:`);
+    const decodedLegacy = legacy ? decodeTarget(legacy) : null;
+    if (decodedLegacy?.destino_tipo !== "gerente") return legacy || "";
+    const supTarget =
+      supSelections[normalize(item.supAlias)] ||
+      savedMap.get(`superintendente:${normalize(item.supAlias)}:`);
+    const decodedSup = supTarget ? decodeTarget(supTarget) : null;
+    const manager = gerentes.find((candidate) => candidate.id === decodedLegacy.target_id);
+    return decodedSup?.destino_tipo === "superintendente" &&
+      manager?.superintendente_id === decodedSup.target_id
+      ? legacy || ""
+      : "";
+  };
 
   const parsed = useMemo(() => {
     const valid: ImportRow[] = [];
@@ -371,16 +396,23 @@ export function VerbaCuryHistorico({
   const uniqueDestinations = useMemo(
     () =>
       Array.from(
-        new Map(parsed.valid.map((row) => [normalize(row.destino), row.destino])).entries(),
-      ).sort((a, b) => a[1].localeCompare(b[1], "pt-BR")),
+        new Map(
+          parsed.valid.map((row) => [
+            `${normalize(row.destino)}:${normalize(row.sup)}`,
+            { alias: row.destino, supAlias: row.sup },
+          ]),
+        ).entries(),
+      ).sort((a, b) =>
+        `${a[1].supAlias} ${a[1].alias}`.localeCompare(`${b[1].supAlias} ${b[1].alias}`, "pt-BR"),
+      ),
     [parsed.valid],
   );
   const requiredMissing = FIELDS.filter((field) => field.required && !mapping[field.key]);
   const unresolvedSups = uniqueSups.filter(
-    ([key]) => !(supSelections[key] || savedMap.get(`superintendente:${key}`)),
+    ([key]) => !(supSelections[key] || savedMap.get(`superintendente:${key}:`)),
   ).length;
   const unresolvedDestinations = uniqueDestinations.filter(
-    ([key]) => !(destinationSelections[key] || savedMap.get(`destino:${key}`)),
+    ([key, item]) => !destinationValue(key, item),
   ).length;
   const totalValue = parsed.valid.reduce((total, row) => total + row.valor, 0);
 
@@ -406,6 +438,7 @@ export function VerbaCuryHistorico({
     if (open) await loadLinks();
     else {
       setManualAlias("");
+      setManualContext("");
       setManualTarget("");
     }
   };
@@ -467,6 +500,9 @@ export function VerbaCuryHistorico({
     const decoded = decodeTarget(manualTarget);
     if (!manualAlias.trim() || !decoded)
       return toast.error("Informe o nome da tabela e o cadastro interno");
+    if (manualOrigin === "destino" && decoded.destino_tipo === "gerente" && !manualContext.trim()) {
+      return toast.error("Informe também o SUP da tabela para vincular um gerente");
+    }
     if (
       manualOrigin === "superintendente" &&
       decoded.destino_tipo !== "superintendente" &&
@@ -481,12 +517,17 @@ export function VerbaCuryHistorico({
           token,
           origem_tipo: manualOrigin,
           alias: manualAlias.trim(),
+          contexto_alias:
+            manualOrigin === "destino" && decoded.destino_tipo === "gerente"
+              ? manualContext.trim()
+              : "",
           destino_tipo: decoded.destino_tipo,
           target_id: decoded.target_id,
         },
       });
       toast.success("Vínculo salvo");
       setManualAlias("");
+      setManualContext("");
       setManualTarget("");
       await loadLinks();
     } catch (error) {
@@ -517,14 +558,21 @@ export function VerbaCuryHistorico({
       ...uniqueSups.map(([key, alias]) => ({
         origem_tipo: "superintendente" as const,
         alias,
-        value: supSelections[key] || savedMap.get(`superintendente:${key}`)!,
+        contexto_alias: "",
+        value: supSelections[key] || savedMap.get(`superintendente:${key}:`)!,
       })),
-      ...uniqueDestinations.map(([key, alias]) => ({
+      ...uniqueDestinations.map(([key, item]) => ({
         origem_tipo: "destino" as const,
-        alias,
-        value: destinationSelections[key] || savedMap.get(`destino:${key}`)!,
+        alias: item.alias,
+        contexto_alias: item.supAlias,
+        value: destinationValue(key, item),
       })),
-    ].map(({ origem_tipo, alias, value }) => ({ origem_tipo, alias, ...decodeTarget(value)! }));
+    ].map(({ origem_tipo, alias, contexto_alias, value }) => ({
+      origem_tipo,
+      alias,
+      contexto_alias,
+      ...decodeTarget(value)!,
+    }));
     setImporting(true);
     const chunkSize = 150;
     const occurrenceByContent = new Map<string, number>();
@@ -597,7 +645,7 @@ export function VerbaCuryHistorico({
             Cadastre os nomes exatamente como aparecem na tabela. Os vínculos ficam salvos para as
             próximas importações.
           </p>
-          <div className="grid gap-3 border border-white/10 bg-white/[0.025] p-3 md:grid-cols-[180px_1fr_1.5fr_auto]">
+          <div className="grid gap-3 border border-white/10 bg-white/[0.025] p-3 md:grid-cols-[160px_1fr_1fr_1.4fr_auto]">
             <Select
               value={manualOrigin}
               onValueChange={(value) => {
@@ -617,6 +665,13 @@ export function VerbaCuryHistorico({
               value={manualAlias}
               onChange={(event) => setManualAlias(event.target.value)}
               placeholder="NOME NA TABELA"
+              className={cyberInput}
+            />
+            <Input
+              value={manualContext}
+              onChange={(event) => setManualContext(event.target.value)}
+              placeholder={manualOrigin === "destino" ? "SUP DA TABELA" : "NÃO SE APLICA"}
+              disabled={manualOrigin !== "destino"}
               className={cyberInput}
             />
             <Select value={manualTarget} onValueChange={setManualTarget}>
@@ -648,9 +703,10 @@ export function VerbaCuryHistorico({
             </Button>
           </div>
           <div className="overflow-hidden border border-white/10">
-            <div className="grid grid-cols-[120px_1fr_1.4fr_40px] border-b border-white/10 bg-white/[0.04] px-3 py-2 text-[9px] font-bold uppercase tracking-[0.18em] text-white/40">
+            <div className="grid grid-cols-[110px_1fr_1fr_1.4fr_40px] border-b border-white/10 bg-white/[0.04] px-3 py-2 text-[9px] font-bold uppercase tracking-[0.18em] text-white/40">
               <span>Origem</span>
               <span>Nome na tabela</span>
+              <span>SUP da época</span>
               <span>Cadastro interno</span>
               <span />
             </div>
@@ -666,13 +722,16 @@ export function VerbaCuryHistorico({
               savedLinks.map((link) => (
                 <div
                   key={link.id}
-                  className="grid grid-cols-[120px_1fr_1.4fr_40px] items-center border-b border-white/[0.06] px-3 py-2 text-[10px] last:border-0"
+                  className="grid grid-cols-[110px_1fr_1fr_1.4fr_40px] items-center border-b border-white/[0.06] px-3 py-2 text-[10px] last:border-0"
                 >
                   <span className="uppercase tracking-wider text-[#39FF14]/70">
                     {link.origem_tipo === "superintendente" ? "SUP" : "Destino"}
                   </span>
                   <span className="truncate text-white/75" title={link.alias}>
                     {link.alias}
+                  </span>
+                  <span className="truncate text-white/35" title={link.contexto_alias || ""}>
+                    {link.contexto_alias || "—"}
                   </span>
                   <span
                     className="truncate text-white/45"
@@ -846,7 +905,7 @@ export function VerbaCuryHistorico({
                           </span>
                           <Select
                             value={
-                              supSelections[key] || savedMap.get(`superintendente:${key}`) || ""
+                              supSelections[key] || savedMap.get(`superintendente:${key}:`) || ""
                             }
                             onValueChange={(value) =>
                               setSupSelections((current) => ({ ...current, [key]: value }))
@@ -877,18 +936,22 @@ export function VerbaCuryHistorico({
                       Destino da tabela → Diretor, SUP ou gerente
                     </div>
                     <div className="max-h-64 overflow-y-auto p-2">
-                      {uniqueDestinations.map(([key, alias]) => (
+                      {uniqueDestinations.map(([key, item]) => (
                         <div
                           key={key}
                           className="grid grid-cols-[minmax(100px,0.8fr)_minmax(180px,1.2fr)] items-center gap-2 border-b border-white/[0.06] py-2 last:border-0"
                         >
-                          <span className="truncate text-[10px] text-white/65" title={alias}>
-                            {alias}
+                          <span
+                            className="min-w-0 text-[10px] text-white/65"
+                            title={`${item.alias} · SUP ${item.supAlias}`}
+                          >
+                            <span className="block truncate">{item.alias}</span>
+                            <span className="block truncate text-[7px] uppercase tracking-wider text-white/30">
+                              SUP · {item.supAlias}
+                            </span>
                           </span>
                           <Select
-                            value={
-                              destinationSelections[key] || savedMap.get(`destino:${key}`) || ""
-                            }
+                            value={destinationValue(key, item)}
                             onValueChange={(value) =>
                               setDestinationSelections((current) => ({ ...current, [key]: value }))
                             }
@@ -897,11 +960,26 @@ export function VerbaCuryHistorico({
                               <SelectValue placeholder="VINCULAR..." />
                             </SelectTrigger>
                             <SelectContent>
-                              {targetOptions.map((option) => (
-                                <SelectItem key={option.value} value={option.value}>
-                                  {option.label}
-                                </SelectItem>
-                              ))}
+                              {targetOptions
+                                .filter((option) => {
+                                  if (option.type !== "gerente") return true;
+                                  const supTarget =
+                                    supSelections[normalize(item.supAlias)] ||
+                                    savedMap.get(`superintendente:${normalize(item.supAlias)}:`);
+                                  const decodedSup = supTarget ? decodeTarget(supTarget) : null;
+                                  const manager = gerentes.find(
+                                    (candidate) => candidate.id === option.id,
+                                  );
+                                  return (
+                                    decodedSup?.destino_tipo === "superintendente" &&
+                                    manager?.superintendente_id === decodedSup.target_id
+                                  );
+                                })
+                                .map((option) => (
+                                  <SelectItem key={option.value} value={option.value}>
+                                    {option.label}
+                                  </SelectItem>
+                                ))}
                             </SelectContent>
                           </Select>
                         </div>

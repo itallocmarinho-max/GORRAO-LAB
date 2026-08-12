@@ -171,14 +171,21 @@ function column(headers: string[], aliases: string[], label: string) {
 }
 
 async function hierarchyMaps() {
-  const { data, error } = await (supabaseAdmin as any)
-    .from("vendas_hierarquia_aliases")
-    .select("tipo, alias_normalizado, profile_id, gerente_id");
+  const [{ data, error }, { data: managers, error: managerError }] = await Promise.all([
+    (supabaseAdmin as any)
+      .from("vendas_hierarquia_aliases")
+      .select("tipo, alias_normalizado, profile_id, gerente_id, externo"),
+    supabaseAdmin.from("gerentes").select("id,nome,superintendente_id"),
+  ]);
   if (error) throw new Error(error.message);
+  if (managerError) throw new Error(managerError.message);
   const diretor = new Map<string, string>();
   const superintendente = new Map<string, string>();
   const gerente = new Map<string, string>();
+  const gerenteNome = new Map<string, string>();
+  const gerentePorNomeSup = new Map<string, string>();
   for (const row of data ?? []) {
+    if (row.externo) continue;
     if (row.tipo === "diretor" && row.profile_id)
       diretor.set(row.alias_normalizado, row.profile_id);
     if (row.tipo === "superintendente" && row.profile_id)
@@ -186,7 +193,12 @@ async function hierarchyMaps() {
     if (row.tipo === "gerente" && row.gerente_id)
       gerente.set(row.alias_normalizado, row.gerente_id);
   }
-  return { diretor, superintendente, gerente };
+  for (const manager of managers ?? []) {
+    const nome = normalizeHierarchy(manager.nome);
+    gerenteNome.set(manager.id, nome);
+    gerentePorNomeSup.set(`${nome}:${manager.superintendente_id}`, manager.id);
+  }
+  return { diretor, superintendente, gerente, gerenteNome, gerentePorNomeSup };
 }
 
 function mapPvRows(values: string[][], maps: Awaited<ReturnType<typeof hierarchyMaps>>) {
@@ -221,6 +233,11 @@ function mapPvRows(values: string[][], maps: Awaited<ReturnType<typeof hierarchy
     const diretor = textOrNull(source[indexes.diretor]);
     const superintendente = textOrNull(source[indexes.superintendente]);
     const gerente = textOrNull(source[indexes.gerente]);
+    const supId = maps.superintendente.get(normalizeHierarchy(superintendente)) ?? null;
+    const aliasGerenteId = maps.gerente.get(normalizeHierarchy(gerente)) ?? null;
+    const gerenteNome = aliasGerenteId ? maps.gerenteNome.get(aliasGerenteId) : null;
+    const gerenteId =
+      gerenteNome && supId ? (maps.gerentePorNomeSup.get(`${gerenteNome}:${supId}`) ?? null) : null;
     rows.set(key, {
       pv_identificador: pv,
       pv_chave: key,
@@ -230,9 +247,8 @@ function mapPvRows(values: string[][], maps: Awaited<ReturnType<typeof hierarchy
       gerente,
       empreendimento: textOrNull(source[indexes.empreendimento]),
       diretor_profile_id: maps.diretor.get(normalizeHierarchy(diretor)) ?? null,
-      superintendente_profile_id:
-        maps.superintendente.get(normalizeHierarchy(superintendente)) ?? null,
-      gerente_id: maps.gerente.get(normalizeHierarchy(gerente)) ?? null,
+      superintendente_profile_id: supId,
+      gerente_id: gerenteId,
       sincronizado_em: synchronizedAt,
     });
   }

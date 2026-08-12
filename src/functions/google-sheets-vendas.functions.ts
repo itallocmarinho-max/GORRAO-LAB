@@ -49,9 +49,7 @@ function requiredEnv(name: string): string {
 function workbookSheetEndpoint(source: URL, sheet: string): URL {
   const match = source.pathname.match(/\/spreadsheets\/d\/([^/]+)/);
   if (!match?.[1]) throw new Error("Não foi possível identificar a planilha do Google Sheets");
-  const endpoint = new URL(
-    `https://docs.google.com/spreadsheets/d/${match[1]}/gviz/tq`,
-  );
+  const endpoint = new URL(`https://docs.google.com/spreadsheets/d/${match[1]}/gviz/tq`);
   endpoint.searchParams.set("tqx", "out:csv");
   endpoint.searchParams.set("sheet", sheet);
   return endpoint;
@@ -224,7 +222,7 @@ async function hierarchyMaps() {
     (supabaseAdmin as any)
       .from("vendas_hierarquia_aliases")
       .select("tipo, alias_normalizado, profile_id, gerente_id, externo"),
-    supabaseAdmin.from("gerentes").select("id, superintendente_id"),
+    supabaseAdmin.from("gerentes").select("id, nome, superintendente_id"),
   ]);
   if (error) throw new Error(error.message);
   if (managersError) throw new Error(managersError.message);
@@ -232,6 +230,8 @@ async function hierarchyMaps() {
   const superintendente = new Map<string, string>();
   const gerente = new Map<string, string>();
   const gerenteSup = new Map<string, string>();
+  const gerenteNome = new Map<string, string>();
+  const gerentePorNomeSup = new Map<string, string>();
   for (const row of data ?? []) {
     if (row.externo) continue;
     if (row.tipo === "diretor" && row.profile_id)
@@ -243,23 +243,34 @@ async function hierarchyMaps() {
       gerente.set(row.alias_normalizado, row.gerente_id);
   }
   for (const manager of managers ?? []) {
-    if (manager.superintendente_id) gerenteSup.set(manager.id, manager.superintendente_id);
+    if (manager.superintendente_id) {
+      gerenteSup.set(manager.id, manager.superintendente_id);
+      const nome = normalizeHierarchy(manager.nome);
+      gerenteNome.set(manager.id, nome);
+      gerentePorNomeSup.set(`${nome}:${manager.superintendente_id}`, manager.id);
+    }
   }
-  return { diretor, superintendente, gerente, gerenteSup };
+  return { diretor, superintendente, gerente, gerenteSup, gerenteNome, gerentePorNomeSup };
 }
 
 function resolveHierarchy<T extends Pick<VendaSheet, "diretor" | "superintendente" | "gerente">>(
   row: T,
   maps: Awaited<ReturnType<typeof hierarchyMaps>>,
 ) {
-  const gerenteId = maps.gerente.get(normalizeHierarchy(row.gerente)) ?? null;
+  const aliasGerenteId = maps.gerente.get(normalizeHierarchy(row.gerente)) ?? null;
+  const supId = maps.superintendente.get(normalizeHierarchy(row.superintendente)) ?? null;
+  const nomeCanonico = aliasGerenteId ? maps.gerenteNome.get(aliasGerenteId) : null;
+  const gerenteId =
+    nomeCanonico && supId
+      ? (maps.gerentePorNomeSup.get(`${nomeCanonico}:${supId}`) ?? null)
+      : aliasGerenteId && maps.gerenteSup.get(aliasGerenteId) === supId
+        ? aliasGerenteId
+        : null;
   return {
     ...row,
     diretor_profile_id: maps.diretor.get(normalizeHierarchy(row.diretor)) ?? null,
     superintendente_profile_id:
-      maps.superintendente.get(normalizeHierarchy(row.superintendente)) ??
-      (gerenteId ? maps.gerenteSup.get(gerenteId) : null) ??
-      null,
+      supId ?? (gerenteId ? maps.gerenteSup.get(gerenteId) : null) ?? null,
     gerente_id: gerenteId,
   };
 }
@@ -275,11 +286,7 @@ function gorraoCredit(row: VendaSheet): number {
 
 async function reapplyHierarchyLinks() {
   const maps = await hierarchyMaps();
-  for (const table of [
-    "vendas_salesforce",
-    "pastas_salesforce_pv",
-    "termos_reserva_salesforce",
-  ]) {
+  for (const table of ["vendas_salesforce", "pastas_salesforce_pv", "termos_reserva_salesforce"]) {
     const { data: sourceRows, error } = await (supabaseAdmin as any)
       .from(table)
       .select("id, diretor, superintendente, gerente");
@@ -303,10 +310,7 @@ async function reapplyHierarchyLinks() {
   }
 }
 
-function resolveTermRows(
-  csv: string,
-  maps: Awaited<ReturnType<typeof hierarchyMaps>>,
-) {
+function resolveTermRows(csv: string, maps: Awaited<ReturnType<typeof hierarchyMaps>>) {
   return mapRows(parseCsv(csv)).rows.map((source) => {
     const resolved = resolveHierarchy(source, maps);
     const { data_assinatura, ...row } = resolved;
@@ -314,10 +318,7 @@ function resolveTermRows(
   });
 }
 
-async function persistTermRows(
-  termoRows: ReturnType<typeof resolveTermRows>,
-  batchSize = 500,
-) {
+async function persistTermRows(termoRows: ReturnType<typeof resolveTermRows>, batchSize = 500) {
   for (let start = 0; start < termoRows.length; start += batchSize) {
     const { error } = await (supabaseAdmin as any)
       .from("termos_reserva_salesforce")

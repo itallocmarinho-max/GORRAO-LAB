@@ -128,18 +128,31 @@ export function buildVendaCreditos(
     const supAlias = aliasFor(aliases, "superintendente", side.superintendente);
     const gerenteAlias = aliasFor(aliases, "gerente", side.gerente);
 
-    const gerenteId = gerenteAlias
+    const aliasGerenteId = gerenteAlias
       ? gerenteAlias.externo
         ? null
         : gerenteAlias.gerente_id
       : side.gerente_id;
-    const gerenteInfo = gerenteId ? diretorio.gerentes.get(gerenteId) : null;
+    const aliasGerenteInfo = aliasGerenteId ? diretorio.gerentes.get(aliasGerenteId) : null;
     const supIdFromAlias = supAlias
       ? supAlias.externo
         ? null
         : supAlias.profile_id
       : side.superintendente_id;
-    const superintendenteId = gerenteInfo?.superintendente_id || supIdFromAlias || null;
+    const gerenteDaEquipe =
+      aliasGerenteInfo && supIdFromAlias
+        ? [...diretorio.gerentes.entries()].find(
+            ([, manager]) =>
+              manager.superintendente_id === supIdFromAlias &&
+              normalizeSalesHierarchy(manager.nome) ===
+                normalizeSalesHierarchy(aliasGerenteInfo.nome),
+          )
+        : null;
+    const gerenteId =
+      gerenteDaEquipe?.[0] ??
+      (aliasGerenteInfo?.superintendente_id === supIdFromAlias ? aliasGerenteId : null);
+    const gerenteInfo = gerenteId ? diretorio.gerentes.get(gerenteId) : null;
+    const superintendenteId = supIdFromAlias || gerenteInfo?.superintendente_id || null;
     const diretorId = diretorAlias
       ? diretorAlias.externo
         ? null

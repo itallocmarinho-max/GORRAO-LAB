@@ -32,6 +32,7 @@ import { Route as AppAdminVendasRouteImport } from './routes/_app.admin.vendas'
 import { Route as AppAdminUsuariosRouteImport } from './routes/_app.admin.usuarios'
 import { Route as AppAdminPainelRouteImport } from './routes/_app.admin.painel'
 import { Route as AppAdminLeadsRouteImport } from './routes/_app.admin.leads'
+import { Route as AppAdminContabilRouteImport } from './routes/_app.admin.contabil'
 import { Route as AppAceleraIdRouteImport } from './routes/_app.acelera.$id'
 import { Route as LovableEmailQueueProcessRouteImport } from './routes/lovable/email/queue/process'
 
@@ -149,6 +150,11 @@ const AppAdminLeadsRoute = AppAdminLeadsRouteImport.update({
   path: '/leads',
   getParentRoute: () => AppAdminRoute,
 } as any)
+const AppAdminContabilRoute = AppAdminContabilRouteImport.update({
+  id: '/contabil',
+  path: '/contabil',
+  getParentRoute: () => AppAdminRoute,
+} as any)
 const AppAceleraIdRoute = AppAceleraIdRouteImport.update({
   id: '/$id',
   path: '/$id',
@@ -178,6 +184,7 @@ export interface FileRoutesByFullPath {
   '/previsao': typeof AppPrevisaoRoute
   '/superintendente': typeof AppSuperintendenteRoute
   '/acelera/$id': typeof AppAceleraIdRoute
+  '/admin/contabil': typeof AppAdminContabilRoute
   '/admin/leads': typeof AppAdminLeadsRoute
   '/admin/painel': typeof AppAdminPainelRoute
   '/admin/usuarios': typeof AppAdminUsuariosRoute
@@ -203,6 +210,7 @@ export interface FileRoutesByTo {
   '/previsao': typeof AppPrevisaoRoute
   '/superintendente': typeof AppSuperintendenteRoute
   '/acelera/$id': typeof AppAceleraIdRoute
+  '/admin/contabil': typeof AppAdminContabilRoute
   '/admin/leads': typeof AppAdminLeadsRoute
   '/admin/painel': typeof AppAdminPainelRoute
   '/admin/usuarios': typeof AppAdminUsuariosRoute
@@ -231,6 +239,7 @@ export interface FileRoutesById {
   '/_app/previsao': typeof AppPrevisaoRoute
   '/_app/superintendente': typeof AppSuperintendenteRoute
   '/_app/acelera/$id': typeof AppAceleraIdRoute
+  '/_app/admin/contabil': typeof AppAdminContabilRoute
   '/_app/admin/leads': typeof AppAdminLeadsRoute
   '/_app/admin/painel': typeof AppAdminPainelRoute
   '/_app/admin/usuarios': typeof AppAdminUsuariosRoute
@@ -259,6 +268,7 @@ export interface FileRouteTypes {
     | '/previsao'
     | '/superintendente'
     | '/acelera/$id'
+    | '/admin/contabil'
     | '/admin/leads'
     | '/admin/painel'
     | '/admin/usuarios'
@@ -284,6 +294,7 @@ export interface FileRouteTypes {
     | '/previsao'
     | '/superintendente'
     | '/acelera/$id'
+    | '/admin/contabil'
     | '/admin/leads'
     | '/admin/painel'
     | '/admin/usuarios'
@@ -311,6 +322,7 @@ export interface FileRouteTypes {
     | '/_app/previsao'
     | '/_app/superintendente'
     | '/_app/acelera/$id'
+    | '/_app/admin/contabil'
     | '/_app/admin/leads'
     | '/_app/admin/painel'
     | '/_app/admin/usuarios'
@@ -495,6 +507,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAdminLeadsRouteImport
       parentRoute: typeof AppAdminRoute
     }
+    '/_app/admin/contabil': {
+      id: '/_app/admin/contabil'
+      path: '/contabil'
+      fullPath: '/admin/contabil'
+      preLoaderRoute: typeof AppAdminContabilRouteImport
+      parentRoute: typeof AppAdminRoute
+    }
     '/_app/acelera/$id': {
       id: '/_app/acelera/$id'
       path: '/$id'
@@ -525,6 +544,7 @@ const AppAceleraRouteWithChildren = AppAceleraRoute._addFileChildren(
 )
 
 interface AppAdminRouteChildren {
+  AppAdminContabilRoute: typeof AppAdminContabilRoute
   AppAdminLeadsRoute: typeof AppAdminLeadsRoute
   AppAdminPainelRoute: typeof AppAdminPainelRoute
   AppAdminUsuariosRoute: typeof AppAdminUsuariosRoute
@@ -533,6 +553,7 @@ interface AppAdminRouteChildren {
 }
 
 const AppAdminRouteChildren: AppAdminRouteChildren = {
+  AppAdminContabilRoute: AppAdminContabilRoute,
   AppAdminLeadsRoute: AppAdminLeadsRoute,
   AppAdminPainelRoute: AppAdminPainelRoute,
   AppAdminUsuariosRoute: AppAdminUsuariosRoute,

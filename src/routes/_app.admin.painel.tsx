@@ -5,14 +5,43 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { toast } from "sonner";
 import { pushUndo } from "@/lib/undo";
-import { ArrowLeft, Plus, Trash2, Settings2, Package, Power, PowerOff, Tag, X, CalendarCheck, Radar, Users, FolderKanban, ChevronRight, Sheet } from "lucide-react";
+import {
+  ArrowLeft,
+  Plus,
+  Trash2,
+  Settings2,
+  Package,
+  Power,
+  PowerOff,
+  Tag,
+  X,
+  CalendarCheck,
+  Radar,
+  Users,
+  FolderKanban,
+  ChevronRight,
+  Sheet,
+  Calculator,
+} from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { CyberBackdrop } from "@/components/CyberBackdrop";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import {
   produtosPrevisaoList,
   produtoPrevisaoCreate,
@@ -22,14 +51,23 @@ import {
   produtoAliasDelete,
 } from "@/functions/vendas.functions";
 
-
 export const Route = createFileRoute("/_app/admin/painel")({
   component: PainelControle,
 });
 
 const MESES = [
-  "Janeiro","Fevereiro","Março","Abril","Maio","Junho",
-  "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro",
+  "Janeiro",
+  "Fevereiro",
+  "Março",
+  "Abril",
+  "Maio",
+  "Junho",
+  "Julho",
+  "Agosto",
+  "Setembro",
+  "Outubro",
+  "Novembro",
+  "Dezembro",
 ];
 
 const PLANTOES_PADRAO = [
@@ -108,7 +146,10 @@ function PainelControle() {
   const copiarMesAnterior = async () => {
     let mAnt = mes - 1;
     let aAnt = ano;
-    if (mAnt < 1) { mAnt = 12; aAnt = ano - 1; }
+    if (mAnt < 1) {
+      mAnt = 12;
+      aAnt = ano - 1;
+    }
     const { data } = await supabase
       .from("plantoes_mes")
       .select("nome, ordem")
@@ -130,9 +171,9 @@ function PainelControle() {
 
   const aplicarPadrao = async () => {
     const existentes = new Set(rows.map((r) => r.nome.toLowerCase()));
-    const insercoes = PLANTOES_PADRAO
-      .filter((p) => !existentes.has(p.toLowerCase()))
-      .map((p, i) => ({ ano, mes, nome: p, ordem: i }));
+    const insercoes = PLANTOES_PADRAO.filter((p) => !existentes.has(p.toLowerCase())).map(
+      (p, i) => ({ ano, mes, nome: p, ordem: i }),
+    );
     if (insercoes.length === 0) return toast.info("Já contém todos os plantões padrão");
     const { error } = await supabase.from("plantoes_mes").insert(insercoes);
     if (error) return toast.error(error.message);
@@ -149,88 +190,114 @@ function PainelControle() {
     <div className="verba-cyber relative -mx-6 -my-8 min-h-[calc(100vh-3rem)] overflow-hidden bg-[#050505] text-white px-6 py-10">
       <CyberBackdrop />
       <div className="relative z-10 container mx-auto space-y-6">
-      <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-        <div className="space-y-2">
-          <div className="inline-flex items-center gap-2 text-[10px] tracking-[0.3em] uppercase text-[#39FF14]">
-            // PAINEL DE CONTROLE
-          </div>
-        </div>
-        {secao !== "hub" && (
-          <Button variant="ghost" size="sm" onClick={() => setSecao("hub")}>
-            <ArrowLeft className="h-4 w-4 mr-1" /> Voltar
-          </Button>
-        )}
-      </div>
-
-      {secao === "hub" && (
-        <HubBotoes onSelect={(s) => setSecao(s)} />
-      )}
-
-      {secao === "plantoes" && (
-      <Card>
-        <CardHeader>
-          <CardTitle>Plantões abertos por mês</CardTitle>
-          <CardDescription>
-            Defina quais plantões aparecerão para os usuários ao preencher o Planejamento. Quando nenhum plantão for cadastrado para o mês, a lista padrão será usada.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-5">
-          <div className="flex flex-wrap items-end gap-3">
-            <div className="w-[180px]">
-              <Label>Mês</Label>
-              <Select value={String(mes)} onValueChange={(v) => setMes(Number(v))}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {MESES.map((m, i) => (
-                    <SelectItem key={m} value={String(i + 1)}>{m}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+        <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+          <div className="space-y-2">
+            <div className="inline-flex items-center gap-2 text-[10px] tracking-[0.3em] uppercase text-[#39FF14]">
+              // PAINEL DE CONTROLE
             </div>
-            <div className="w-[140px]">
-              <Label>Ano</Label>
-              <Select value={String(ano)} onValueChange={(v) => setAno(Number(v))}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {anos.map((a) => <SelectItem key={a} value={String(a)}>{a}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <Button variant="outline" onClick={copiarMesAnterior}>Copiar do mês anterior</Button>
-            <Button variant="outline" onClick={aplicarPadrao}>Aplicar lista padrão</Button>
           </div>
-
-          <div className="flex gap-2">
-            <Input
-              placeholder="Nome do plantão (ex.: Barra Funda)"
-              value={novo}
-              onChange={(e) => setNovo(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); adicionar(novo); } }}
-            />
-            <Button onClick={() => adicionar(novo)} disabled={busy || !novo.trim()}>
-              <Plus className="h-4 w-4 mr-1" /> Adicionar
+          {secao !== "hub" && (
+            <Button variant="ghost" size="sm" onClick={() => setSecao("hub")}>
+              <ArrowLeft className="h-4 w-4 mr-1" /> Voltar
             </Button>
-          </div>
+          )}
+        </div>
 
-          <div className="rounded-md border divide-y">
-            {rows.length === 0 ? (
-              <div className="p-4 text-sm text-muted-foreground">
-                Nenhum plantão cadastrado para {MESES[mes - 1]}/{ano}. A lista padrão será exibida aos usuários.
-              </div>
-            ) : rows.map((r) => (
-              <div key={r.id} className="flex items-center justify-between px-3 py-2">
-                <span className="text-sm">{r.nome}</span>
-                <Button variant="ghost" size="icon" onClick={() => remover(r.id)} title="Remover">
-                  <Trash2 className="h-4 w-4 text-destructive" />
+        {secao === "hub" && <HubBotoes onSelect={(s) => setSecao(s)} />}
+
+        {secao === "plantoes" && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Plantões abertos por mês</CardTitle>
+              <CardDescription>
+                Defina quais plantões aparecerão para os usuários ao preencher o Planejamento.
+                Quando nenhum plantão for cadastrado para o mês, a lista padrão será usada.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <div className="flex flex-wrap items-end gap-3">
+                <div className="w-[180px]">
+                  <Label>Mês</Label>
+                  <Select value={String(mes)} onValueChange={(v) => setMes(Number(v))}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {MESES.map((m, i) => (
+                        <SelectItem key={m} value={String(i + 1)}>
+                          {m}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="w-[140px]">
+                  <Label>Ano</Label>
+                  <Select value={String(ano)} onValueChange={(v) => setAno(Number(v))}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {anos.map((a) => (
+                        <SelectItem key={a} value={String(a)}>
+                          {a}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button variant="outline" onClick={copiarMesAnterior}>
+                  Copiar do mês anterior
+                </Button>
+                <Button variant="outline" onClick={aplicarPadrao}>
+                  Aplicar lista padrão
                 </Button>
               </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-      )}
 
-      {secao === "produtos" && <ProdutosPrevisaoCard />}
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Nome do plantão (ex.: Barra Funda)"
+                  value={novo}
+                  onChange={(e) => setNovo(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      adicionar(novo);
+                    }
+                  }}
+                />
+                <Button onClick={() => adicionar(novo)} disabled={busy || !novo.trim()}>
+                  <Plus className="h-4 w-4 mr-1" /> Adicionar
+                </Button>
+              </div>
+
+              <div className="rounded-md border divide-y">
+                {rows.length === 0 ? (
+                  <div className="p-4 text-sm text-muted-foreground">
+                    Nenhum plantão cadastrado para {MESES[mes - 1]}/{ano}. A lista padrão será
+                    exibida aos usuários.
+                  </div>
+                ) : (
+                  rows.map((r) => (
+                    <div key={r.id} className="flex items-center justify-between px-3 py-2">
+                      <span className="text-sm">{r.nome}</span>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => remover(r.id)}
+                        title="Remover"
+                      >
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {secao === "produtos" && <ProdutosPrevisaoCard />}
       </div>
     </div>
   );
@@ -244,11 +311,17 @@ function HubBotoes({ onSelect }: { onSelect: (s: "plantoes" | "produtos") => voi
     onClick?: () => void;
     to?: string;
   }> = [
-    { key: "plantoes", title: "// PLANEJAMENTO", icon: CalendarCheck, onClick: () => onSelect("plantoes") },
+    {
+      key: "plantoes",
+      title: "// PLANEJAMENTO",
+      icon: CalendarCheck,
+      onClick: () => onSelect("plantoes"),
+    },
     { key: "produtos", title: "PREVISÃO", icon: Package, onClick: () => onSelect("produtos") },
     { key: "c2s", title: "C2S", icon: Radar, to: "/admin/leads" },
     { key: "usuarios", title: "USUÁRIOS", icon: Users, to: "/admin/usuarios" },
     { key: "vendas", title: "VENDAS", icon: Sheet, to: "/admin/vendas" },
+    { key: "contabil", title: "CONTÁBIL", icon: Calculator, to: "/admin/contabil" },
     { key: "pastas", title: "PASTAS", icon: FolderKanban, to: "/pastas" },
   ];
 
@@ -315,47 +388,66 @@ function ProdutosPrevisaoCard() {
         const updated = r.find((p) => p.id === editing.id);
         if (updated) setEditing(updated);
       }
-    } catch (e: any) { toast.error(e?.message ?? "Erro ao carregar produtos"); }
-    finally { setLoading(false); }
+    } catch (e: any) {
+      toast.error(e?.message ?? "Erro ao carregar produtos");
+    } finally {
+      setLoading(false);
+    }
   }
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [token]);
+  useEffect(() => {
+    load(); /* eslint-disable-next-line */
+  }, [token]);
 
   async function criar() {
     const nome = novo.trim();
     if (!nome) return;
     setBusy(true);
     try {
-      const r = await produtoPrevisaoCreate({ data: { token, nome } }) as { already: boolean };
+      const r = (await produtoPrevisaoCreate({ data: { token, nome } })) as { already: boolean };
       if (r.already) toast.info("Esse produto já existe");
       else toast.success("Produto criado");
       setNovo("");
       await load();
-    } catch (e: any) { toast.error(e?.message ?? "Falha"); }
-    finally { setBusy(false); }
+    } catch (e: any) {
+      toast.error(e?.message ?? "Falha");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function toggle(p: ProdutoRow) {
     try {
       await produtoPrevisaoToggleAtivo({ data: { token, id: p.id, ativo: !p.ativo } });
       await load();
-    } catch (e: any) { toast.error(e?.message ?? "Falha"); }
+    } catch (e: any) {
+      toast.error(e?.message ?? "Falha");
+    }
   }
 
   async function excluir(p: ProdutoRow) {
-    if (p.previsoes_count > 0) { toast.error("Produto possui previsões — inative em vez de excluir"); return; }
+    if (p.previsoes_count > 0) {
+      toast.error("Produto possui previsões — inative em vez de excluir");
+      return;
+    }
     try {
       await produtoPrevisaoDelete({ data: { token, id: p.id } });
       toast.success("Produto excluído");
       await load();
-    } catch (e: any) { toast.error(e?.message ?? "Falha"); }
+    } catch (e: any) {
+      toast.error(e?.message ?? "Falha");
+    }
   }
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2"><Package className="h-5 w-5" /> Produtos da Previsão</CardTitle>
+        <CardTitle className="flex items-center gap-2">
+          <Package className="h-5 w-5" /> Produtos da Previsão
+        </CardTitle>
         <CardDescription>
-          Cadastre os produtos que serão lançados nas previsões. Ao importar a base de vendas, você poderá associar cada empreendimento a um produto — esses nomes ficam aprendidos como aliases para as próximas importações.
+          Cadastre os produtos que serão lançados nas previsões. Ao importar a base de vendas, você
+          poderá associar cada empreendimento a um produto — esses nomes ficam aprendidos como
+          aliases para as próximas importações.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -364,9 +456,16 @@ function ProdutosPrevisaoCard() {
             placeholder="Nome do produto (ex.: Cury Vila Maria)"
             value={novo}
             onChange={(e) => setNovo(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); criar(); } }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                criar();
+              }
+            }}
           />
-          <Button onClick={criar} disabled={busy || !novo.trim()}><Plus className="h-4 w-4 mr-1" /> Adicionar</Button>
+          <Button onClick={criar} disabled={busy || !novo.trim()}>
+            <Plus className="h-4 w-4 mr-1" /> Adicionar
+          </Button>
         </div>
 
         <div className="rounded-md border divide-y">
@@ -374,29 +473,50 @@ function ProdutosPrevisaoCard() {
             <div className="p-4 text-sm text-muted-foreground">Carregando...</div>
           ) : rows.length === 0 ? (
             <div className="p-4 text-sm text-muted-foreground">Nenhum produto cadastrado.</div>
-          ) : rows.map((p) => (
-            <div key={p.id} className="flex items-center gap-3 px-3 py-2">
-              <div className="flex-1 min-w-0">
-                <div className="text-sm font-medium truncate flex items-center gap-2">
-                  {p.nome}
-                  {!p.ativo && <Badge variant="outline" className="text-[10px]">Inativo</Badge>}
+          ) : (
+            rows.map((p) => (
+              <div key={p.id} className="flex items-center gap-3 px-3 py-2">
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium truncate flex items-center gap-2">
+                    {p.nome}
+                    {!p.ativo && (
+                      <Badge variant="outline" className="text-[10px]">
+                        Inativo
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="text-xs text-muted-foreground flex gap-3 mt-0.5">
+                    <span>{p.previsoes_count} previsão(ões)</span>
+                    <span>{p.aliases.length} alias(es)</span>
+                  </div>
                 </div>
-                <div className="text-xs text-muted-foreground flex gap-3 mt-0.5">
-                  <span>{p.previsoes_count} previsão(ões)</span>
-                  <span>{p.aliases.length} alias(es)</span>
-                </div>
+                <Button size="sm" variant="ghost" onClick={() => setEditing(p)}>
+                  <Tag className="h-4 w-4 mr-1" /> Aliases
+                </Button>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  onClick={() => toggle(p)}
+                  title={p.ativo ? "Inativar" : "Ativar"}
+                >
+                  {p.ativo ? (
+                    <PowerOff className="h-4 w-4 text-muted-foreground" />
+                  ) : (
+                    <Power className="h-4 w-4 text-emerald-600" />
+                  )}
+                </Button>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  onClick={() => excluir(p)}
+                  title="Excluir"
+                  disabled={p.previsoes_count > 0}
+                >
+                  <Trash2 className="h-4 w-4 text-destructive" />
+                </Button>
               </div>
-              <Button size="sm" variant="ghost" onClick={() => setEditing(p)}>
-                <Tag className="h-4 w-4 mr-1" /> Aliases
-              </Button>
-              <Button size="icon" variant="ghost" onClick={() => toggle(p)} title={p.ativo ? "Inativar" : "Ativar"}>
-                {p.ativo ? <PowerOff className="h-4 w-4 text-muted-foreground" /> : <Power className="h-4 w-4 text-emerald-600" />}
-              </Button>
-              <Button size="icon" variant="ghost" onClick={() => excluir(p)} title="Excluir" disabled={p.previsoes_count > 0}>
-                <Trash2 className="h-4 w-4 text-destructive" />
-              </Button>
-            </div>
-          ))}
+            ))
+          )}
         </div>
       </CardContent>
 
@@ -405,11 +525,11 @@ function ProdutosPrevisaoCard() {
           <DialogHeader>
             <DialogTitle>Aliases — {editing?.nome}</DialogTitle>
           </DialogHeader>
-          {editing && (
-            <AliasesEditor token={token} produto={editing} onChange={load} />
-          )}
+          {editing && <AliasesEditor token={token} produto={editing} onChange={load} />}
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setEditing(null)}>Fechar</Button>
+            <Button variant="ghost" onClick={() => setEditing(null)}>
+              Fechar
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -417,7 +537,15 @@ function ProdutosPrevisaoCard() {
   );
 }
 
-function AliasesEditor({ token, produto, onChange }: { token: string; produto: ProdutoRow; onChange: () => void }) {
+function AliasesEditor({
+  token,
+  produto,
+  onChange,
+}: {
+  token: string;
+  produto: ProdutoRow;
+  onChange: () => void;
+}) {
   const [novo, setNovo] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -429,40 +557,57 @@ function AliasesEditor({ token, produto, onChange }: { token: string; produto: P
       await produtoAliasUpsert({ data: { token, produto_id: produto.id, alias } });
       setNovo("");
       onChange();
-    } catch (e: any) { toast.error(e?.message ?? "Falha"); }
-    finally { setBusy(false); }
+    } catch (e: any) {
+      toast.error(e?.message ?? "Falha");
+    } finally {
+      setBusy(false);
+    }
   }
   async function remove(id: string) {
-    try { await produtoAliasDelete({ data: { token, id } }); onChange(); }
-    catch (e: any) { toast.error(e?.message ?? "Falha"); }
+    try {
+      await produtoAliasDelete({ data: { token, id } });
+      onChange();
+    } catch (e: any) {
+      toast.error(e?.message ?? "Falha");
+    }
   }
 
   return (
     <div className="space-y-3">
       <p className="text-xs text-muted-foreground">
-        Cada alias é um nome alternativo (ex: como aparece no nome do empreendimento na planilha de vendas) que será mapeado automaticamente para este produto.
+        Cada alias é um nome alternativo (ex: como aparece no nome do empreendimento na planilha de
+        vendas) que será mapeado automaticamente para este produto.
       </p>
       <div className="flex gap-2">
         <Input
           placeholder="Novo alias (ex.: VILA MARIA RES.)"
           value={novo}
           onChange={(e) => setNovo(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); add(); } }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              add();
+            }
+          }}
         />
-        <Button onClick={add} disabled={busy || !novo.trim()}><Plus className="h-4 w-4" /></Button>
+        <Button onClick={add} disabled={busy || !novo.trim()}>
+          <Plus className="h-4 w-4" />
+        </Button>
       </div>
       <div className="rounded-md border divide-y max-h-64 overflow-y-auto">
         {produto.aliases.length === 0 ? (
           <div className="p-3 text-sm text-muted-foreground">Nenhum alias cadastrado.</div>
-        ) : produto.aliases.map((a) => (
-          <div key={a.id} className="flex items-center gap-2 px-3 py-1.5">
-            <span className="flex-1 text-sm truncate">{a.alias}</span>
-            <span className="text-[10px] text-muted-foreground">{a.vezes_usado}×</span>
-            <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => remove(a.id)}>
-              <X className="h-4 w-4 text-rose-600" />
-            </Button>
-          </div>
-        ))}
+        ) : (
+          produto.aliases.map((a) => (
+            <div key={a.id} className="flex items-center gap-2 px-3 py-1.5">
+              <span className="flex-1 text-sm truncate">{a.alias}</span>
+              <span className="text-[10px] text-muted-foreground">{a.vezes_usado}×</span>
+              <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => remove(a.id)}>
+                <X className="h-4 w-4 text-rose-600" />
+              </Button>
+            </div>
+          ))
+        )}
       </div>
     </div>
   );
