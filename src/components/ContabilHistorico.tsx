@@ -552,25 +552,38 @@ export function ContabilHistorico({
       selected[linkKey(tipo, item.alias, item.context)] ||
       savedMap.get(linkKey(tipo, item.alias, item.context)),
     );
+  const displayEntries = Object.entries(displayUniques) as Array<[Tipo, DisplayLink[]]>;
+  const itemIsValidated = (tipo: Tipo, item: DisplayLink) =>
+    item.contexts.every((context) => isValidated(tipo, { alias: item.alias, context }));
+  const itemHasSuggestion = (tipo: Tipo, item: DisplayLink) =>
+    item.contexts.every((context) => Boolean(current(tipo, item.alias, context)));
   const unresolved = (
     Object.entries(uniques) as Array<[Tipo, Array<{ alias: string; context: string }>]>
   ).flatMap(([tipo, values]) => values.filter((v) => !current(tipo, v.alias, v.context))).length;
-  const pendingValidation = (Object.entries(uniques) as Array<[Tipo, UniqueLink[]]>).flatMap(
-    ([tipo, values]) => values.filter((item) => !isValidated(tipo, item)),
-  ).length;
+  const pendingItems = displayEntries.flatMap(([tipo, values]) =>
+    values
+      .filter((item) => !itemIsValidated(tipo, item))
+      .map((item) => ({ tipo, ...item, hasSuggestion: itemHasSuggestion(tipo, item) })),
+  );
+  const pendingValidation = pendingItems.length;
+  const pendingNames = pendingItems.map((item) => item.alias);
 
   const validateAll = () => {
     let accepted = 0;
     let missing = 0;
     setSelected((state) => {
       const next = { ...state };
-      for (const [tipo, values] of Object.entries(uniques) as Array<[Tipo, UniqueLink[]]>) {
+      for (const [tipo, values] of displayEntries) {
         for (const item of values) {
-          const selectionKey = linkKey(tipo, item.alias, item.context);
-          if (next[selectionKey] || savedMap.get(selectionKey)) continue;
-          const suggestion = current(tipo, item.alias, item.context);
-          if (suggestion) {
-            next[selectionKey] = suggestion;
+          if (itemIsValidated(tipo, item)) continue;
+          const suggestions = item.contexts.map((context) => ({
+            context,
+            value: current(tipo, item.alias, context),
+          }));
+          if (suggestions.every((suggestion) => Boolean(suggestion.value))) {
+            for (const suggestion of suggestions) {
+              next[linkKey(tipo, item.alias, suggestion.context)] = suggestion.value;
+            }
             accepted += 1;
           } else missing += 1;
         }
@@ -626,7 +639,10 @@ export function ContabilHistorico({
       return toast.error(`${parsed.errors.length} linha(s) inválida(s). ${parsed.errors[0]}`);
     if (!parsed.valid.length) return toast.error("Nenhuma linha válida");
     if (pendingValidation)
-      return toast.error(`Valide os ${pendingValidation} vínculo(s) pendente(s)`);
+      return toast.error(
+        `Valide ${pendingValidation === 1 ? "o vínculo" : `os ${pendingValidation} vínculos`}: ${pendingNames.join(", ")}`,
+        { duration: 12000 },
+      );
     if (unresolved) return toast.error(`Existem ${unresolved} vínculo(s) pendente(s)`);
     const vinculos = (
       Object.entries(uniques) as Array<[Tipo, Array<{ alias: string; context: string }>]>
@@ -682,54 +698,72 @@ export function ContabilHistorico({
       <div className="divide-y divide-white/[.06] border border-white/10">
         {values
           .sort((a, b) => a.alias.localeCompare(b.alias, "pt-BR"))
-          .map((item) => (
-            <div
-              key={`${tipo}:${norm(item.alias)}`}
-              className="grid grid-cols-[minmax(120px,.8fr)_minmax(200px,1.2fr)_38px] items-center gap-2 bg-black/35 p-2"
-            >
-              <div className="min-w-0">
-                <div className="truncate text-[10px] text-white/70">{item.alias}</div>
-                {item.contexts.some(Boolean) && (
-                  <div className="truncate text-[7px] uppercase tracking-wider text-white/30">
-                    {tipo === "gerente" && item.contexts.length > 1
-                      ? "SUPS"
-                      : tipo === "gerente"
-                        ? "SUP"
-                        : "DIRETOR"}{" "}
-                    · {item.contexts.filter(Boolean).join(" / ")}
-                  </div>
-                )}
-              </div>
-              <Select
-                value={groupValue(tipo, item)}
-                onValueChange={(value) => setGroupValue(tipo, item, value)}
+          .map((item) => {
+            const validated = itemIsValidated(tipo, item);
+            const suggested = itemHasSuggestion(tipo, item);
+            return (
+              <div
+                key={`${tipo}:${norm(item.alias)}`}
+                className={`grid grid-cols-[minmax(120px,.8fr)_minmax(200px,1.2fr)_38px] items-center gap-2 border-l-2 bg-black/35 p-2 ${
+                  validated
+                    ? "border-l-[#39FF14]"
+                    : suggested
+                      ? "border-l-amber-400"
+                      : "border-l-red-400"
+                }`}
               >
-                <SelectTrigger className={input}>
-                  <SelectValue placeholder="VINCULAR..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {(tipo === "gerente" ? managerNameOptions : options(tipo, item.contexts[0])).map(
-                    (o) => (
+                <div className="min-w-0">
+                  <div className="truncate text-[10px] text-white/70">{item.alias}</div>
+                  {item.contexts.some(Boolean) && (
+                    <div className="truncate text-[7px] uppercase tracking-wider text-white/30">
+                      {tipo === "gerente" && item.contexts.length > 1
+                        ? "SUPS"
+                        : tipo === "gerente"
+                          ? "SUP"
+                          : "DIRETOR"}{" "}
+                      · {item.contexts.filter(Boolean).join(" / ")}
+                    </div>
+                  )}
+                  <div
+                    className={`mt-1 text-[7px] font-bold uppercase tracking-wider ${
+                      validated ? "text-[#39FF14]" : suggested ? "text-amber-400" : "text-red-400"
+                    }`}
+                  >
+                    {validated ? "Validado" : suggested ? "Sugestão · validar" : "Revisão manual"}
+                  </div>
+                </div>
+                <Select
+                  value={groupValue(tipo, item)}
+                  onValueChange={(value) => setGroupValue(tipo, item, value)}
+                >
+                  <SelectTrigger className={input}>
+                    <SelectValue placeholder="VINCULAR..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(tipo === "gerente"
+                      ? managerNameOptions
+                      : options(tipo, item.contexts[0])
+                    ).map((o) => (
                       <SelectItem key={o.value} value={o.value}>
                         {o.label.toUpperCase()}
                       </SelectItem>
-                    ),
-                  )}
-                </SelectContent>
-              </Select>
-              <button
-                type="button"
-                title="Criar cadastro histórico"
-                onClick={() => {
-                  setCreate({ tipo, alias: item.alias, context: item.contexts[0] });
-                  setNewName(item.alias);
-                }}
-                className="grid h-9 w-9 place-items-center border border-[#39FF14]/30 text-[#39FF14] hover:bg-[#39FF14]/10"
-              >
-                <UserPlus className="h-4 w-4" />
-              </button>
-            </div>
-          ))}
+                    ))}
+                  </SelectContent>
+                </Select>
+                <button
+                  type="button"
+                  title="Criar cadastro histórico"
+                  onClick={() => {
+                    setCreate({ tipo, alias: item.alias, context: item.contexts[0] });
+                    setNewName(item.alias);
+                  }}
+                  className="grid h-9 w-9 place-items-center border border-[#39FF14]/30 text-[#39FF14] hover:bg-[#39FF14]/10"
+                >
+                  <UserPlus className="h-4 w-4" />
+                </button>
+              </div>
+            );
+          })}
       </div>
     </section>
   );
@@ -842,6 +876,11 @@ export function ContabilHistorico({
                   Cada pessoa aparece uma vez. Quando ela teve mais de um SUP, o histórico mantém
                   automaticamente a equipe correspondente a cada linha e período.
                 </p>
+                {pendingItems.length > 0 && (
+                  <div className="border border-amber-400/25 bg-amber-400/[.04] px-3 py-2 text-[9px] uppercase leading-5 tracking-wider text-amber-200/80">
+                    Aguardando validação: {pendingNames.join(" · ")}
+                  </div>
+                )}
                 <LinkRows tipo="diretor" values={displayUniques.diretor} />
                 <LinkRows tipo="superintendente" values={displayUniques.superintendente} />
                 <LinkRows tipo="gerente" values={displayUniques.gerente} />
