@@ -316,11 +316,8 @@ export const contabilHistoricoImport = createServerFn({ method: "POST" })
           `Linha ${source.linha}: o SUP vinculado não pertence ao diretor selecionado`,
         );
       }
-      if (expectedParent(gerente) !== targetIdentity(sup)) {
-        throw new Error(
-          `Linha ${source.linha}: o gerente vinculado não pertence ao SUP selecionado`,
-        );
-      }
+      // O gerente é uma identidade única no Contábil. O SUP da época é preservado
+      // separadamente pela própria linha, portanto não deve ser comparado à equipe atual.
       const canonical = { ...source, linha: undefined, ocorrencia: undefined };
       rows.push({
         chave_origem: await sha256(`contabil:${JSON.stringify(canonical)}:${source.ocorrencia}`),

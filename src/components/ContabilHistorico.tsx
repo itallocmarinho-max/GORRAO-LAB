@@ -448,7 +448,9 @@ export function ContabilHistorico({
     ];
     for (const candidate of candidates) {
       if (!candidate) continue;
-      if (tipo === "diretor") return candidate;
+      // No Contábil, gerente é uma identidade única. O SUP histórico pertence à
+      // linha importada e não altera a identidade da pessoa vinculada.
+      if (tipo === "diretor" || tipo === "gerente") return candidate;
       const expected = expectedParent(tipo, parentContext || context);
       if (parentOf(candidate) === expected) return candidate;
       const canonicalName = norm(nameOf(candidate));
@@ -492,6 +494,13 @@ export function ContabilHistorico({
       const h = people.find((x) => x.tipo === tipo && norm(x.nome) === norm(alias));
       return p ? `profile:${p.id}` : h ? `pessoa:${h.id}` : "";
     }
+    if (tipo === "gerente") {
+      const manager = gerentes.find((item) => norm(item.nome) === norm(alias));
+      const historical = people.find(
+        (item) => item.tipo === tipo && norm(item.nome) === norm(alias),
+      );
+      return manager ? `gerente:${manager.id}` : historical ? `pessoa:${historical.id}` : "";
+    }
     return targetByNameAndParent(tipo, norm(alias), expectedParent(tipo, context));
   }
   const options = (tipo: Tipo, context = "") =>
@@ -531,15 +540,18 @@ export function ContabilHistorico({
   const setGroupValue = (tipo: Tipo, item: DisplayLink, value: string) => {
     setSelected((state) => {
       const next = { ...state };
+      const normalizedName = value.replace(/^name:/, "");
+      const manager = gerentes.find((candidate) => norm(candidate.nome) === normalizedName);
+      const historicalManager = people.find(
+        (candidate) => candidate.tipo === "gerente" && norm(candidate.nome) === normalizedName,
+      );
+      const canonicalManager = manager
+        ? `gerente:${manager.id}`
+        : historicalManager
+          ? `pessoa:${historicalManager.id}`
+          : "";
       for (const context of item.contexts) {
-        const target =
-          tipo === "gerente"
-            ? targetByNameAndParent(
-                tipo,
-                value.replace(/^name:/, ""),
-                expectedParent(tipo, context),
-              )
-            : value;
+        const target = tipo === "gerente" ? canonicalManager : value;
         const selectionKey = linkKey(tipo, item.alias, context);
         if (target) next[selectionKey] = target;
         else delete next[selectionKey];
